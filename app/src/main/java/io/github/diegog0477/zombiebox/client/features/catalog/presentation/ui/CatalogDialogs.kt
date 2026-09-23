@@ -303,6 +303,15 @@ class CatalogDialogs(
                             load { model.openIptvFavorites(::showPage, ::loadFailed) }
                         }
                     )
+                if (provider == "iptv" && screen.page.categories.isNotEmpty())
+                    addView(
+                        ui.button(R.string.iptv_categories) {
+                            remember()
+                            chooseIptvCategory(screen)
+                        }
+                    )
+                if (screen.location.category.isNotEmpty())
+                    addView(ui.text(screen.location.category, 14f, ui.providerAccent(provider)))
                 if (screen.location.query.isNotEmpty())
                     addView(ui.text(screen.location.query, 14f, ui.muted))
                 if (screen.page.items.isEmpty())
@@ -348,6 +357,19 @@ class CatalogDialogs(
                 dialog.show()
                 list.restoreViewport()
             }
+    }
+
+    private fun chooseIptvCategory(screen: CatalogScreen) {
+        val categories = listOf("") + screen.page.categories
+        val labels =
+            listOf(activity.getString(R.string.iptv_all_categories)) + screen.page.categories
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.iptv_categories)
+            .setItems(labels.toTypedArray()) { _, index ->
+                load { model.openIptvCategory(categories[index], ::showPage, ::loadFailed) }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
     }
 
     private fun openGuide(screen: CatalogScreen, saved: CatalogOverlay = CatalogOverlay()) {

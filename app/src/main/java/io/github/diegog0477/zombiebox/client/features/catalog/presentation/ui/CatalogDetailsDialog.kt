@@ -31,6 +31,7 @@ class CatalogDetailsDialog(private val activity: Activity) {
                     ui.text(ui.serviceTitle(item.provider), 14f, ui.providerAccent(item.provider))
                 )
                 if (item.subtitle.isNotEmpty()) addView(ui.text(item.subtitle, 16f, ui.muted))
+                if (item.category.isNotEmpty()) addView(ui.text(item.category, 14f, ui.muted))
                 if (item.durationMs > 0)
                     addView(
                         ui.text(

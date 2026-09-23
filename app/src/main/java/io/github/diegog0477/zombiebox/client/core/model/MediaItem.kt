@@ -15,4 +15,5 @@ data class MediaItem(
     val kind: String = "",
     val guideState: String = "",
     val favorite: Boolean = false,
+    val category: String = "",
 )

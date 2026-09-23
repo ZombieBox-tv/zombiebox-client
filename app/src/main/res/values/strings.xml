@@ -211,6 +211,8 @@
     <string name="next_failed">Could not start the next item. Try Next again.</string>
     <string name="guide">Programme guide</string>
     <string name="iptv_favorites">Favorite channels</string>
+    <string name="iptv_categories">Categories</string>
+    <string name="iptv_all_categories">All channels</string>
     <string name="add_iptv_favorite">☆ Add to favorites</string>
     <string name="remove_iptv_favorite">★ Remove from favorites</string>
     <string name="guide_no_programme">No programme information for this time</string>

@@ -7,18 +7,35 @@ import io.github.diegog0477.zombiebox.shared.GatewayApi
 import java.net.URLEncoder
 
 class GatewayCatalogRepository(private val api: GatewayApi) : CatalogRepository {
-    override fun favoritePage(query: String, offset: Int): CatalogPage {
+    override fun iptvPage(
+        query: String,
+        offset: Int,
+        favoritesOnly: Boolean,
+        category: String,
+    ): CatalogPage {
         val result =
             api.request(
                 "GET",
-                "/v1/catalog?provider=iptv&favorites=1&offset=$offset&q=" +
-                    URLEncoder.encode(query, "UTF-8"),
+                "/v1/catalog?provider=iptv&offset=$offset&q=" +
+                    URLEncoder.encode(query, "UTF-8") +
+                    "&favorites=" +
+                    (if (favoritesOnly) "1" else "0") +
+                    "&category=" +
+                    URLEncoder.encode(category, "UTF-8"),
             )
         val items = result.getJSONArray("items")
+        val groups = result.optJSONArray("categories")
         return CatalogPage(
             (0 until items.length()).map { MediaItemDecoder.decodeItem(items.getJSONObject(it)) },
             result.optInt("nextOffset", -1),
+            categories =
+                if (groups == null) emptyList()
+                else (0 until groups.length()).map { groups.getString(it) },
         )
+    }
+
+    override fun favoritePage(query: String, offset: Int): CatalogPage {
+        return iptvPage(query, offset, true, "")
     }
 
     override fun setIptvFavorite(id: String, favorite: Boolean) {

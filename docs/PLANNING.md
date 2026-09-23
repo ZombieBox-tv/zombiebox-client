@@ -1,5 +1,11 @@
 # zombiebox-client: component work
 
+## dev.45 IPTV category navigation
+
+Select current M3U categories from the IPTV catalog, combine with favorites and
+search, and preserve the semantic filter through Back/recreation. EN/ES controls
+accompany APK versionCode 45. Physical D-pad and playlist acceptance remain.
+
 ## dev.44 IPTV favorites
 
 Add a focused favorite action and paged/searchable IPTV favorite location with

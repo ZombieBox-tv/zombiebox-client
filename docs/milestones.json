@@ -3,6 +3,7 @@
   "repository": "zombiebox-client",
   "productRegistry": "workspace:docs/milestones.json",
   "notes": [
+    "Dev.45: IPTV category picker and semantic category/search/favorite navigation, EN/ES resources and APK versionCode 45. Physical acceptance remains open.",
     "Dev.44: IPTV favorite action/list/search with saved semantic navigation and EN/ES strings; APK versionCode 44. Physical focus/playback and other V1 gates remain open.",
     "Local component scope; product exit gates remain open. Hosted milestones are open; see remoteURL entries.",
     "Dev.10: shared local media tracks/text subtitles and client Home refinement. Cast consumes the protocol transport update. Product exit gates remain open.",

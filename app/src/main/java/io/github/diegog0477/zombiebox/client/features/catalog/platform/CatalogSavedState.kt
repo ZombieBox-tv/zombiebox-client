@@ -77,6 +77,7 @@ object CatalogSavedState {
                     putString("query", bookmark.location.query.take(256))
                     putInt("offset", bookmark.location.offset)
                     putBoolean("favoritesOnly", bookmark.location.favoritesOnly)
+                    putString("category", bookmark.location.category.take(80))
                     putString("selected", bookmark.viewport.selectedId.take(200))
                     putString("first", bookmark.viewport.firstVisibleId.take(200))
                     putInt("top", bookmark.viewport.firstTop)
@@ -96,6 +97,7 @@ object CatalogSavedState {
                         it.getString("query") ?: "",
                         it.getInt("offset").coerceAtLeast(0),
                         it.getBoolean("favoritesOnly"),
+                        (it.getString("category") ?: "").take(80),
                     ),
                     CatalogViewport(
                         it.getString("selected") ?: "",

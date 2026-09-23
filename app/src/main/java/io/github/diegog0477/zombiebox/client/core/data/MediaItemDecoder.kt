@@ -30,6 +30,7 @@ object MediaItemDecoder {
             item.optString("kind"),
             item.optString("guideState"),
             item.optBoolean("favorite", false),
+            item.optString("category"),
         )
     }
 }

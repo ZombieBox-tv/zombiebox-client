@@ -29,6 +29,20 @@ class CatalogViewModelTest {
             return CatalogPage(listOf(folder.copy(provider = "iptv")), -1, "Favorites")
         }
 
+        override fun iptvPage(
+            query: String,
+            offset: Int,
+            favoritesOnly: Boolean,
+            category: String,
+        ): CatalogPage {
+            if (favoritesOnly) return favoritePage(query, offset)
+            if (category.isEmpty()) return page("iptv", query, offset)
+            requests.add(
+                CatalogLocation("iptv", query = query, offset = offset, category = category)
+            )
+            return CatalogPage(listOf(folder.copy(provider = "iptv", category = category)), -1)
+        }
+
         override fun page(
             provider: String,
             query: String,
@@ -55,6 +69,22 @@ class CatalogViewModelTest {
         assertTrue(model.screen!!.location.favoritesOnly)
         assertTrue(model.back {})
         assertFalse(model.screen!!.location.favoritesOnly)
+    }
+
+    @Test
+    fun iptvCategorySurvivesSearchAndBack() {
+        val repository = Repository(folder)
+        val model = CatalogViewModel(repository, ScreenTasks({ it() }, { it() }))
+        model.open("iptv", "", {}, { throw it })
+        model.openIptvCategory("News", {}, { throw it })
+        assertEquals("News", model.screen!!.location.category)
+        model.search("local", {}, { throw it })
+        assertEquals("News", repository.requests.last().category)
+        assertEquals("local", repository.requests.last().query)
+        assertTrue(model.back {})
+        assertEquals("News", model.screen!!.location.category)
+        assertTrue(model.back {})
+        assertEquals("", model.screen!!.location.category)
     }
 
     @Test

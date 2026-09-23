@@ -220,6 +220,8 @@
     </string>
     <string name="guide">Guía de programación</string>
     <string name="iptv_favorites">Canales favoritos</string>
+    <string name="iptv_categories">Categorías</string>
+    <string name="iptv_all_categories">Todos los canales</string>
     <string name="add_iptv_favorite">☆ Agregar a favoritos</string>
     <string name="remove_iptv_favorite">★ Quitar de favoritos</string>
     <string name="guide_no_programme">Sin información para esta hora</string>

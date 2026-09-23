@@ -2,7 +2,12 @@ package io.github.diegog0477.zombiebox.client.features.catalog.domain.model
 
 import io.github.diegog0477.zombiebox.client.core.model.MediaItem
 
-data class CatalogPage(val items: List<MediaItem>, val nextOffset: Int, val title: String = "")
+data class CatalogPage(
+    val items: List<MediaItem>,
+    val nextOffset: Int,
+    val title: String = "",
+    val categories: List<String> = emptyList(),
+)
 
 data class CatalogLocation(
     val provider: String,
@@ -10,6 +15,7 @@ data class CatalogLocation(
     val query: String = "",
     val offset: Int = 0,
     val favoritesOnly: Boolean = false,
+    val category: String = "",
 )
 
 data class CatalogScreen(

@@ -7,6 +7,13 @@ interface CatalogRepository {
 
     fun favoritePage(query: String, offset: Int): CatalogPage = page("iptv", query, offset)
 
+    fun iptvPage(
+        query: String,
+        offset: Int,
+        favoritesOnly: Boolean,
+        category: String,
+    ): CatalogPage = if (favoritesOnly) favoritePage(query, offset) else page("iptv", query, offset)
+
     fun setIptvFavorite(id: String, favorite: Boolean) {
         throw UnsupportedOperationException("IPTV favorites unavailable")
     }
