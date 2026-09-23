@@ -7,6 +7,28 @@ import io.github.diegog0477.zombiebox.client.features.catalog.domain.repository.
 
 /** Owns bounded navigation snapshots, page offsets and stable return focus. */
 class CatalogViewModel(private val repository: CatalogRepository, private val tasks: ScreenTasks) {
+    fun youtubeAccount(done: (YouTubeAccountStatus) -> Unit, failed: (Exception) -> Unit) =
+        tasks.run({ repository.youtubeAccount() }, done, failed)
+
+    fun startYouTubeAccount(done: (YouTubeAccountStatus) -> Unit, failed: (Exception) -> Unit) =
+        tasks.run({ repository.startYouTubeAccount() }, done, failed)
+
+    fun pollYouTubeAccount(done: (YouTubeAccountStatus) -> Unit, failed: (Exception) -> Unit) =
+        tasks.run({ repository.pollYouTubeAccount() }, done, failed)
+
+    fun disconnectYouTubeAccount(
+        operatorCode: String,
+        done: (YouTubeAccountStatus) -> Unit,
+        failed: (Exception) -> Unit,
+    ) = tasks.run({ repository.disconnectYouTubeAccount(operatorCode) }, done, failed)
+
+    fun youtubeAccountPage(
+        kind: String,
+        pageToken: String,
+        done: (YouTubeAccountPage) -> Unit,
+        failed: (Exception) -> Unit,
+    ) = tasks.run({ repository.youtubeAccountPage(kind, pageToken) }, done, failed)
+
     private var generation = 0
     private val history = ArrayList<CatalogScreen>()
     var screen: CatalogScreen? = null

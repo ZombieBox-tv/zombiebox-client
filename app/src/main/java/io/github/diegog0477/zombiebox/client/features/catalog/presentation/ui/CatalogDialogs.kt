@@ -27,6 +27,21 @@ class CatalogDialogs(
     private val startOver: (MediaItem) -> Unit,
 ) {
     private val ui = TvWidgets(activity)
+    private val youtubeAccount =
+        YouTubeAccountDialogs(
+            activity,
+            model,
+            { item ->
+                load {
+                    model.openLocation(
+                        CatalogLocation("youtube", parent = item.browseId),
+                        ::showPage,
+                        ::loadFailed,
+                    )
+                }
+            },
+            error,
+        )
 
     private var overlay: AlertDialog? = null
     private var overlayCapture: () -> CatalogOverlay = { CatalogOverlay() }
@@ -85,6 +100,7 @@ class CatalogDialogs(
     val visible: Boolean
         get() =
             browser?.isShowing == true ||
+                youtubeAccount.visible ||
                 detail?.isShowing == true ||
                 overlay?.isShowing == true ||
                 guide?.visible == true
@@ -206,6 +222,7 @@ class CatalogDialogs(
     }
 
     fun close() {
+        youtubeAccount.close()
         model.rememberPlaybackReturn(null)
         searchOrigin = false
         overlay?.dismiss()
@@ -296,6 +313,8 @@ class CatalogDialogs(
                             openGuide(model.screen ?: screen)
                         }
                     )
+                if (provider == "youtube" && screen.location.parent.isEmpty())
+                    addView(ui.button(R.string.youtube_account) { youtubeAccount.show() })
                 if (provider == "iptv" && !screen.location.favoritesOnly)
                     addView(
                         ui.button(R.string.iptv_favorites) {

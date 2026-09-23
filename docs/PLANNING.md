@@ -159,3 +159,10 @@ Dev.42: one-shot playback return to paged guide, catalog details or search; boun
 ## dev.43 navigation and functional media increment
 
 Dev.43: retained settings parent menus, bounded recreation bookmarks, stale-load fencing and stable provider identity; Browser D-pad escape, semantic focus restoration and stale-frame cleanup. VersionCode43. Physical navigation acceptance remains deferred.
+## dev.46 YouTube account navigation
+
+Client shows the gateway-owned TV OAuth verification code/URL, manual interval-
+gated status checks, subscriptions/playlists and device-scoped channel/playlist
+browse navigation; disconnect requires the operator code. APK versionCode 46,
+minSdk 9 and no native library. A real Google account and device focus remain
+unverified. TV Code is independent; no product milestone closes.

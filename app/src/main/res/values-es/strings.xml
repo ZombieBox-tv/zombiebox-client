@@ -393,4 +393,21 @@
     <string name="browser_controls_hint">
         Al controlar la página, pulsa Atrás para volver a los controles. Cerrar vuelve al inicio.
     </string>
+    <string name="youtube_account">Cuenta de YouTube</string>
+    <string name="youtube_account_unconfigured">
+        Configura el ID de cliente OAuth para TV en el Gateway para explorar tu cuenta. TV Code es
+        independiente.
+    </string>
+    <string name="youtube_account_disconnected">
+        Conecta una cuenta de YouTube para explorar suscripciones y listas.
+    </string>
+    <string name="youtube_account_prompt">
+        En otro dispositivo, abre %1$s e introduce el código %2$s. Espera al menos %3$d segundos y
+        luego verifica la autorización aquí.
+    </string>
+    <string name="youtube_connect">Conectar cuenta</string>
+    <string name="youtube_check_authorization">Verificar autorización</string>
+    <string name="youtube_subscriptions">Suscripciones</string>
+    <string name="youtube_playlists">Listas de reproducción</string>
+    <string name="youtube_disconnect">Desconectar cuenta</string>
 </resources>

@@ -364,4 +364,21 @@
     <string name="browser_controls_hint">
         While controlling the page, press Back to return to browser controls. Close returns to Home.
     </string>
+    <string name="youtube_account">YouTube account</string>
+    <string name="youtube_account_unconfigured">
+        Set the Google TV OAuth client ID on the Gateway to enable account browsing. TV Code is
+        separate.
+    </string>
+    <string name="youtube_account_disconnected">
+        Connect a YouTube account to browse subscriptions and playlists.
+    </string>
+    <string name="youtube_account_prompt">
+        On another device, open %1$s and enter code %2$s. Wait at least %3$d seconds, then check
+        authorization here.
+    </string>
+    <string name="youtube_connect">Connect account</string>
+    <string name="youtube_check_authorization">Check authorization</string>
+    <string name="youtube_subscriptions">Subscriptions</string>
+    <string name="youtube_playlists">Playlists</string>
+    <string name="youtube_disconnect">Disconnect account</string>
 </resources>
