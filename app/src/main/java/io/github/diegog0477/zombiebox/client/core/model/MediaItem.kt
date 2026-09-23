@@ -14,4 +14,5 @@ data class MediaItem(
     val playable: Boolean = true,
     val kind: String = "",
     val guideState: String = "",
+    val favorite: Boolean = false,
 )

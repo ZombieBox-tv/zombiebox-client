@@ -1,5 +1,11 @@
 # zombiebox-client: component work
 
+## dev.44 IPTV favorites
+
+Add a focused favorite action and paged/searchable IPTV favorite location with
+Back and semantic saved-state restoration. English/Spanish resources and JVM
+navigation evidence accompany versionCode 44; physical focus/player tests remain.
+
 The product milestones relevant to this repository are M1, M2, M3, M4, M5, M6, M7, M8, M9, M11.
 The local registry is a component projection of the workspace plan. Closing a
 component task does not close a product-wide milestone or a physical validation gate.

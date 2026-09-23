@@ -29,6 +29,7 @@ object MediaItemDecoder {
             item.optBoolean("playable", true),
             item.optString("kind"),
             item.optString("guideState"),
+            item.optBoolean("favorite", false),
         )
     }
 }

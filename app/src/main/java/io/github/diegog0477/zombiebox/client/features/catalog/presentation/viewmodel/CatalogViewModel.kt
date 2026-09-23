@@ -76,6 +76,16 @@ class CatalogViewModel(private val repository: CatalogRepository, private val ta
         load(CatalogLocation(provider, query = query), false, done, failed)
     }
 
+    fun openIptvFavorites(done: (CatalogScreen) -> Unit, failed: (Exception) -> Unit) {
+        val current = screen
+        load(CatalogLocation("iptv", favoritesOnly = true), current != null, done, failed)
+    }
+
+    fun setIptvFavorite(item: MediaItem, done: () -> Unit, failed: (Exception) -> Unit) {
+        if (item.provider != "iptv" || item.kind != "channel") return
+        tasks.run({ repository.setIptvFavorite(item.id, !item.favorite) }, { done() }, failed)
+    }
+
     fun openLocation(
         location: CatalogLocation,
         done: (CatalogScreen) -> Unit,
@@ -176,7 +186,14 @@ class CatalogViewModel(private val repository: CatalogRepository, private val ta
         val previous = screen
         tasks.run(
             {
-                repository.page(location.provider, location.query, location.offset, location.parent)
+                if (location.favoritesOnly) repository.favoritePage(location.query, location.offset)
+                else
+                    repository.page(
+                        location.provider,
+                        location.query,
+                        location.offset,
+                        location.parent,
+                    )
             },
             { page ->
                 if (request == generation) {

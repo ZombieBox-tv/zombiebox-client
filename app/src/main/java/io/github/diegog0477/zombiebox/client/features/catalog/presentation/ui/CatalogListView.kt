@@ -49,7 +49,8 @@ class CatalogListView(context: Context, private val screen: CatalogScreen, accen
                                 addView(ui.text("", 12f, ui.muted).apply { setSingleLine(true) })
                             }
                     val item = getItem(position)
-                    (row.getChildAt(0) as TextView).text = item.title
+                    (row.getChildAt(0) as TextView).text =
+                        if (item.favorite) "★ ${item.title}" else item.title
                     (row.getChildAt(1) as TextView).text =
                         if (item.browseId.isNotEmpty()) context.getString(R.string.catalog_folder)
                         else item.subtitle

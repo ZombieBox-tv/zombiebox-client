@@ -19,6 +19,7 @@ class CatalogDetailsDialog(private val activity: Activity) {
         play: () -> Unit,
         startOver: () -> Unit,
         closed: (() -> Unit)?,
+        favorite: (() -> Unit)? = null,
     ): AlertDialog {
         val ui = TvWidgets(activity)
         val content =
@@ -44,6 +45,18 @@ class CatalogDetailsDialog(private val activity: Activity) {
                     )
                 if (item.description.isNotEmpty())
                     addView(ui.text(item.description.take(12000), 16f))
+                if (favorite != null)
+                    addView(
+                        ui.action(
+                            activity.getString(
+                                if (item.favorite) R.string.remove_iptv_favorite
+                                else R.string.add_iptv_favorite
+                            ),
+                            ui.providerAccent("iptv"),
+                        ) {
+                            favorite()
+                        }
+                    )
                 for (programme in item.programmes.take(8)) {
                     val time =
                         DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)

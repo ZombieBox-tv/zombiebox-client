@@ -22,6 +22,13 @@ class CatalogViewModelTest {
         val requests = mutableListOf<CatalogLocation>()
         var fail = false
 
+        override fun favoritePage(query: String, offset: Int): CatalogPage {
+            requests.add(
+                CatalogLocation("iptv", query = query, offset = offset, favoritesOnly = true)
+            )
+            return CatalogPage(listOf(folder.copy(provider = "iptv")), -1, "Favorites")
+        }
+
         override fun page(
             provider: String,
             query: String,
@@ -32,6 +39,22 @@ class CatalogViewModelTest {
             if (fail) throw IllegalStateException("unavailable")
             return CatalogPage(listOf(folder), if (offset == 0) 80 else 100, "Library")
         }
+    }
+
+    @Test
+    fun iptvFavoritesKeepTheirFilterAcrossSearchAndBack() {
+        val repository = Repository(folder)
+        val model = CatalogViewModel(repository, ScreenTasks({ it() }, { it() }))
+        model.open("iptv", "", {}, { throw it })
+        model.openIptvFavorites({}, { throw it })
+        assertTrue(model.screen!!.location.favoritesOnly)
+        model.search("news", {}, { throw it })
+        assertEquals("news", repository.requests.last().query)
+        assertTrue(repository.requests.last().favoritesOnly)
+        assertTrue(model.back {})
+        assertTrue(model.screen!!.location.favoritesOnly)
+        assertTrue(model.back {})
+        assertFalse(model.screen!!.location.favoritesOnly)
     }
 
     @Test

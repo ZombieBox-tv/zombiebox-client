@@ -219,6 +219,9 @@
         No se pudo iniciar el siguiente contenido. Intenta Siguiente de nuevo.
     </string>
     <string name="guide">Guía de programación</string>
+    <string name="iptv_favorites">Canales favoritos</string>
+    <string name="add_iptv_favorite">☆ Agregar a favoritos</string>
+    <string name="remove_iptv_favorite">★ Quitar de favoritos</string>
     <string name="guide_no_programme">Sin información para esta hora</string>
     <string name="guide_help">
         Izquierda/derecha: hora · Arriba/abajo: canal · Seleccionar: ver en vivo

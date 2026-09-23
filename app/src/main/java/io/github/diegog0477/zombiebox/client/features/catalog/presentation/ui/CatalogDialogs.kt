@@ -296,6 +296,13 @@ class CatalogDialogs(
                             openGuide(model.screen ?: screen)
                         }
                     )
+                if (provider == "iptv" && !screen.location.favoritesOnly)
+                    addView(
+                        ui.button(R.string.iptv_favorites) {
+                            remember()
+                            load { model.openIptvFavorites(::showPage, ::loadFailed) }
+                        }
+                    )
                 if (screen.location.query.isNotEmpty())
                     addView(ui.text(screen.location.query, 14f, ui.muted))
                 if (screen.page.items.isEmpty())
@@ -319,7 +326,10 @@ class CatalogDialogs(
         }
         val builder =
             AlertDialog.Builder(activity)
-                .setTitle(screen.page.title.ifEmpty { ui.serviceTitle(provider) })
+                .setTitle(
+                    if (screen.location.favoritesOnly) activity.getString(R.string.iptv_favorites)
+                    else screen.page.title.ifEmpty { ui.serviceTitle(provider) }
+                )
                 .setView(content)
                 .setNegativeButton(R.string.close) { _, _ ->
                     searchOrigin = false
@@ -441,6 +451,20 @@ class CatalogDialogs(
                     { playDetails(item, false) },
                     { playDetails(item, true) },
                     closed,
+                    if (item.provider == "iptv" && item.kind == "channel") {
+                        {
+                            detail?.dismiss()
+                            model.setIptvFavorite(
+                                item,
+                                {
+                                    if (model.screen != null)
+                                        load { model.refresh(::showPage, ::loadFailed) }
+                                    else showDetails(item.copy(favorite = !item.favorite), closed)
+                                },
+                                ::loadFailed,
+                            )
+                        }
+                    } else null,
                 )
     }
 }

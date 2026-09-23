@@ -9,6 +9,7 @@ data class CatalogLocation(
     val parent: String = "",
     val query: String = "",
     val offset: Int = 0,
+    val favoritesOnly: Boolean = false,
 )
 
 data class CatalogScreen(
