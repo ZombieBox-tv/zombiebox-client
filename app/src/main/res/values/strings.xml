@@ -8,6 +8,7 @@
     <string name="devices">Devices</string>
     <string name="opens_on_demand">Opens on demand</string>
     <string name="airplay_show_pin">Show AirPlay PIN</string>
+    <string name="airplay_receive">Receive AirPlay</string>
     <string name="airplay_pairing_title">Connect with AirPlay</string>
     <string name="airplay_pairing_detail">
         Enter this password on your Apple device. It is separate from the gateway operator code.
@@ -23,7 +24,8 @@
         Send audio or mirror your screen from an Apple device on the same network.
     </string>
     <string name="airplay_state_ready">
-        The gateway can contact the receiver. Choose Zombie Box on your Apple device to start.
+        The receiver is online. Select Receive AirPlay on this TV, then choose Zombie Box on your
+        Apple device.
     </string>
     <string name="airplay_state_disabled">
         AirPlay is disabled on the gateway. Enable it in service settings.
@@ -38,7 +40,8 @@
     <string name="airplay_audio_title">AirPlay audio</string>
     <string name="airplay_mirror_title">Screen mirroring</string>
     <string name="airplay_audio_idle">
-        Select Zombie Box as the audio output on your Apple device.
+        Enable AirPlay reception on this TV, then select Zombie Box as the audio output on your
+        Apple device.
     </string>
     <string name="airplay_mirror_idle">
         Open Screen Mirroring on your Apple device and select Zombie Box.
@@ -187,6 +190,57 @@
     </string>
     <string name="refresh_services">Refresh services</string>
     <string name="spotify_authorize">Show Spotify pairing code</string>
+    <string name="spotify_pairing_checking">Checking Spotify account connection…</string>
+    <string name="spotify_pairing_unavailable">
+        Spotify connection details are unavailable. Refresh or check the gateway.
+    </string>
+    <string name="spotify_pairing_zeroconf">
+        Open Spotify on a phone connected to this network. If Zombie Box appears under available
+        devices, select it to connect your account. To use a pairing code instead, choose
+        device_auth in the gateway Spotify configuration.
+    </string>
+    <string name="spotify_pairing_device_auth">
+        Use your operator code to show a Spotify account pairing code, then follow the instructions
+        on your phone.
+    </string>
+    <string name="spotify_pairing_ready">
+        Spotify account is connected. Return to the Spotify tab to activate the receiver.
+    </string>
+    <string name="playback_starting">Starting playback…</string>
+    <string name="playback_taking_longer">
+        Playback is taking longer than expected. Check the network if it does not start.
+    </string>
+    <string name="playback_start_failed">Playback could not start. Please try again.</string>
+    <string name="spotify_intro">Audio receiver and Spotify Connect player.</string>
+    <string name="spotify_receive_title">
+        Playback &amp; Session
+    </string>
+    <string name="spotify_receiver_online">
+        Receiver online; Spotify account connection may still be needed.
+    </string>
+    <string name="spotify_receiver_disabled">
+        Spotify receiver is disabled in gateway settings.
+    </string>
+    <string name="spotify_receiver_unavailable">
+        Spotify worker is unavailable or degraded. Check gateway services.
+    </string>
+    <string name="spotify_receiver_auth_required">
+        Spotify account connection required. Open account options to use the gateway pairing code.
+    </string>
+    <string name="spotify_receiver_auth_zeroconf">
+        Activate the receiver, then look for Zombie Box in the Spotify app on your phone.
+    </string>
+    <string name="spotify_receiver_checking">Checking Spotify receiver status…</string>
+    <string name="spotify_connect_account">Connect Spotify account</string>
+    <string name="spotify_activate_receiver">Activate Spotify receiver</string>
+    <string name="spotify_idle_title">Spotify playback idle</string>
+    <string name="spotify_idle_detail">
+        Activate the receiver. If Zombie Box appears in your Spotify app, select it there; the
+        account-link option is available when needed.
+    </string>
+    <string name="spotify_now_playing">Now Playing on Spotify</string>
+    <string name="open_player">Open player</string>
+    <string name="idle">Idle</string>
     <string name="music_resume">Resume Spotify</string>
     <string name="music_pause">Pause Spotify</string>
     <string name="music_previous">Previous track</string>
@@ -208,6 +262,10 @@
     <string name="provider_service_unavailable">
         This service is unavailable right now. Check its status on the gateway.
     </string>
+    <string name="provider_service_auth_required">
+        This service needs authorization. Open Services to connect its account or credentials.
+    </string>
+    <string name="provider_service_waiting">Waiting for service status from the gateway…</string>
     <string name="mirror_waiting_for_stream">Waiting for stream</string>
     <string name="implementation_pending">Implementation pending</string>
     <string name="browser_address">Search Google or enter a website</string>
@@ -281,6 +339,7 @@
     <string name="youtube_empty_home">No videos to show yet. Search YouTube to get started.</string>
     <string name="catalog_folder">Open collection</string>
     <string name="media_receiver">Receive Spotify / AirPlay</string>
+    <string name="receiver_selected">%1$s selected for reception on this TV.</string>
     <string name="playback_failed">Playback interrupted</string>
     <string name="playback_recovery_help">
         Retry with a more compatible stream, or open this item in another player.
@@ -331,6 +390,7 @@
     <string name="search_count">%1$d results</string>
     <string name="search_partial">Unavailable: %1$s</string>
     <string name="search_more">View more from %1$s</string>
+    <string name="search_provider_instruction">Enter at least two characters to search %1$s</string>
     <string name="surface_backend">Video output backend</string>
     <string name="texture_verified">TextureView (requires a successful probe)</string>
     <string name="surface_restart">

@@ -16,6 +16,7 @@ import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
 import io.github.diegog0477.zombiebox.client.core.ui.WindowedRow
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.ArtworkImageView
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel.ArtworkViewModel
+import io.github.diegog0477.zombiebox.client.features.catalog.presentation.ui.CatalogUiPolicy
 import io.github.diegog0477.zombiebox.client.features.diagnostics.platform.HardwareMemory
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeBudget
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeScope
@@ -41,6 +42,9 @@ data class HomeActions(
     val next: () -> Unit = {},
     val previous: () -> Unit = {},
     val expand: () -> Unit = {},
+    val spotifyAuthorize: () -> Unit = {},
+    val spotifyReceive: () -> Unit = {},
+    val airplayReceive: () -> Unit = {},
 )
 
 /** Home composition and D-pad focus. Receives semantic content and user-action callbacks. */
@@ -59,6 +63,8 @@ class HomeView(
     private var scope = HomeScope()
     private val navigation = LinkedHashMap<String, Button>()
     private var heroStatus: TextView? = null
+    private var playbackFeedbackView: TextView? = null
+    private var playbackFeedbackMessage: Int? = null
     private val heapMb =
         (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).memoryClass
     private val physicalMb = HardwareMemory.physicalMb()
@@ -66,9 +72,11 @@ class HomeView(
     private var nowPlayingRail: NowPlayingRailView? = null
     private var compactTransport: CompactTransportBar? = null
     private var rightRailContainer: FrameLayout? = null
+    private var spotifyPageView: SpotifyPageView? = null
     private var rememberedMainFocus: String? = null
     private var currentPlayback: HomePlaybackSession = HomePlaybackSession()
     private var isDockedLandscape: Boolean = false
+    private var isFullscreen: Boolean = false
 
     fun isRightRailActive(): Boolean =
         isDockedLandscape && currentPlayback.active && nowPlayingRail != null
@@ -97,7 +105,10 @@ class HomeView(
         nowPlayingRail?.moveFocus(keyCode, current)
 
     fun setPlaybackSession(playback: HomePlaybackSession) {
+        val wasActive = currentPlayback.active
+        val wasSpotify = currentPlayback.item?.provider == "spotify"
         currentPlayback = playback
+        spotifyPageView?.updatePlaybackSession(playback)
         if (isDockedLandscape) {
             rightRailContainer?.let { container ->
                 if (playback.active && nowPlayingRail != null) {
@@ -143,6 +154,16 @@ class HomeView(
                 }
             }
         }
+        val spotifyActive = playback.active && playback.item?.provider == "spotify"
+        if (wasActive != playback.active || wasSpotify != spotifyActive) {
+            focusRows.removeAll { it.first == "spotify:playback" }
+            if (spotifyActive && scope.provider == "spotify") {
+                spotifyPageView?.playbackControls()?.let {
+                    focusRows.add(Pair("spotify:playback", it))
+                }
+            }
+            focus.rebuild(focusRows + playbackFocusRows(playback), !isFullscreen)
+        }
     }
 
     fun videoDockRect(relativeTo: View): Rect? =
@@ -153,12 +174,21 @@ class HomeView(
             currentPlayback.copy(state = status, positionMs = positionMs, durationMs = durationMs)
         nowPlayingRail?.updateProgress(status, positionMs, durationMs)
         compactTransport?.updateProgress(status, positionMs, durationMs)
+        spotifyPageView?.updateProgress(status, positionMs, durationMs)
     }
 
     fun status(loading: Boolean, failed: Boolean) {
         heroStatus?.apply {
             visibility = if (loading || failed) VISIBLE else GONE
             setText(if (loading) R.string.home_refreshing else R.string.home_stale)
+        }
+    }
+
+    fun playbackFeedback(message: Int?) {
+        playbackFeedbackMessage = message
+        playbackFeedbackView?.apply {
+            visibility = if (message == null) GONE else VISIBLE
+            if (message != null) setText(message)
         }
     }
 
@@ -206,11 +236,13 @@ class HomeView(
     ) {
         this.scope = scope
         this.currentPlayback = playback
+        this.isFullscreen = full
         focusRows.clear()
         navigation.clear()
         nowPlayingRail = null
         compactTransport = null
         rightRailContainer = null
+        spotifyPageView = null
         removeAllViews()
 
         val widthDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
@@ -335,6 +367,9 @@ class HomeView(
         val statusView = ui.text("", 12f, ui.muted).apply { visibility = GONE }
         heroStatus = statusView
         content.addView(statusView)
+        playbackFeedbackView = ui.text("", 15f, ui.muted)
+        content.addView(playbackFeedbackView)
+        playbackFeedback(playbackFeedbackMessage)
 
         when (scope.provider) {
             "youtube" -> {
@@ -372,7 +407,11 @@ class HomeView(
             "airplay" -> {
                 AirPlayPageView(context, ui, actions).render(mainColumn, snapshot, focusRows)
             }
-            "spotify",
+            "spotify" -> {
+                val page = SpotifyPageView(context, ui, actions, artwork, decoder)
+                spotifyPageView = page
+                page.render(mainColumn, snapshot, currentPlayback, focusRows)
+            }
             "iptv" -> {
                 renderProviderScope(
                     parent = mainColumn,
@@ -396,13 +435,13 @@ class HomeView(
             )
         )
 
-        val transportGroup: List<Pair<String, ViewGroup>> =
-            if (!isDockedLandscape && playback.active && compactTransport != null) {
-                listOf(Pair("transport", compactTransport!!.controlsContainer()))
-            } else emptyList()
-
-        focus.rebuild(focusRows + transportGroup, !full)
+        focus.rebuild(focusRows + playbackFocusRows(playback), !full)
     }
+
+    private fun playbackFocusRows(playback: HomePlaybackSession): List<Pair<String, ViewGroup>> =
+        if (!isDockedLandscape && playback.active && compactTransport != null)
+            listOf(Pair("transport", compactTransport!!.controlsContainer()))
+        else emptyList()
 
     private fun headerAction(label: Int, settings: Boolean, click: () -> Unit): ImageButton =
         ImageButton(context).apply {
@@ -510,10 +549,15 @@ class HomeView(
                 if (section.id == "continue") context.getString(R.string.continue_watching)
                 else ui.serviceTitle(section.id)
             )
+            val sectionModule = snapshot.modules.firstOrNull { it.id == section.id }
+            val isReady =
+                sectionModule == null ||
+                    sectionModule.state == "READY" ||
+                    sectionModule.state == "HEALTHY"
             val hasCatalog =
-                section.id != "continue" &&
-                    section.id != "airplay" &&
-                    section.id != "android_mirror"
+                CatalogUiPolicy.supportsCatalog(section.id) &&
+                    isReady &&
+                    !CatalogUiPolicy.isReceiverOnly(section.id)
             val keys =
                 section.items.map { "item:" + section.id + ":" + it.id } +
                     if (hasCatalog) listOf("all:" + section.id) else emptyList()
@@ -521,7 +565,11 @@ class HomeView(
                 WindowedRow(context, keys, HomeBudget.rowCapacity(heapMb, physicalMb, tv)) { index
                     ->
                     if (index == section.items.size) {
-                        ui.button(R.string.view_all) { actions.catalog(section.id) }
+                        ui.button(R.string.view_all) {
+                            if (CatalogUiPolicy.supportsCatalog(section.id)) {
+                                actions.catalog(section.id)
+                            }
+                        }
                     } else {
                         val item = section.items[index]
                         val card =
@@ -686,9 +734,12 @@ class HomeView(
             focusRows.add(Pair("$provider:hero", heroActions))
         }
 
+        val serviceState = snapshot.modules.firstOrNull { it.id == provider }?.state
+        val canBrowse = CatalogUiPolicy.canBrowseLibrary(provider, serviceState)
+
         val sectionsWithItems = snapshot.sections.filter { it.items.isNotEmpty() }
         if (sectionsWithItems.isEmpty() && featured == null) {
-            val emptyState = ProviderEmptyStateView(context, ui, provider, actions)
+            val emptyState = ProviderEmptyStateView(context, ui, provider, actions, serviceState)
             parent.addView(
                 emptyState,
                 LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(14), 0, ui.dp(14)) },
@@ -701,12 +752,16 @@ class HomeView(
             title(if (section.id == provider) ui.serviceTitle(provider) else section.id)
             val keys =
                 section.items.map { "item:$provider:${section.id}:${it.id}" } +
-                    listOf("all:$provider:${section.id}")
+                    if (canBrowse) listOf("all:$provider:${section.id}") else emptyList()
             val line =
                 WindowedRow(context, keys, HomeBudget.rowCapacity(heapMb, physicalMb, tv)) { index
                     ->
                     if (index == section.items.size) {
-                        ui.button(R.string.view_all) { actions.catalog(provider) }
+                        ui.button(R.string.view_all) {
+                            if (CatalogUiPolicy.supportsCatalog(provider)) {
+                                actions.catalog(provider)
+                            }
+                        }
                     } else {
                         val item = section.items[index]
                         val card =

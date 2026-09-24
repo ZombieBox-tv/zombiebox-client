@@ -14,7 +14,11 @@ class GatewayServicesRepository(private val api: GatewayApi) : ServicesRepositor
         val integrations =
             (0 until values.length()).map {
                 val item = values.getJSONObject(it)
-                Integration(item.getString("id"), item.getString("state"))
+                Integration(
+                    item.getString("id"),
+                    item.getString("state"),
+                    item.optString("authMode"),
+                )
             }
         val music =
             try {

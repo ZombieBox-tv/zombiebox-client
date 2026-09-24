@@ -8,6 +8,7 @@
     <string name="devices">Dispositivos</string>
     <string name="opens_on_demand">Se abre cuando lo usas</string>
     <string name="airplay_show_pin">Ver PIN de AirPlay</string>
+    <string name="airplay_receive">Recibir AirPlay</string>
     <string name="airplay_pairing_title">Conectar con AirPlay</string>
     <string name="airplay_pairing_detail">
         Escribe esta contraseña en tu dispositivo Apple. Es distinta del código de operador del
@@ -26,8 +27,8 @@
         Envía audio o comparte la pantalla desde un dispositivo Apple en la misma red.
     </string>
     <string name="airplay_state_ready">
-        El gateway puede contactar al receptor. Elige Zombie Box en tu dispositivo Apple para
-        comenzar.
+        El receptor está en línea. Selecciona Recibir AirPlay en esta TV y luego elige Zombie Box
+        en tu dispositivo Apple.
     </string>
     <string name="airplay_state_disabled">
         AirPlay está desactivado en el gateway. Actívalo en los ajustes del servicio.
@@ -42,7 +43,8 @@
     <string name="airplay_audio_title">Audio AirPlay</string>
     <string name="airplay_mirror_title">Compartir pantalla</string>
     <string name="airplay_audio_idle">
-        Selecciona Zombie Box como salida de audio en tu dispositivo Apple.
+        Activa la recepción AirPlay en esta TV y luego selecciona Zombie Box como salida de audio
+        en tu dispositivo Apple.
     </string>
     <string name="airplay_mirror_idle">
         Abre Compartir pantalla en tu dispositivo Apple y selecciona Zombie Box.
@@ -199,6 +201,60 @@
     </string>
     <string name="refresh_services">Actualizar servicios</string>
     <string name="spotify_authorize">Mostrar código de enlace de Spotify</string>
+    <string name="spotify_pairing_checking">
+        Comprobando la conexión de la cuenta de Spotify…
+    </string>
+    <string name="spotify_pairing_unavailable">
+        Los datos de conexión de Spotify no están disponibles. Actualiza o revisa el gateway.
+    </string>
+    <string name="spotify_pairing_zeroconf">
+        Abre Spotify en un teléfono conectado a esta red. Si Zombie Box aparece entre los
+        dispositivos disponibles, selecciónalo para conectar tu cuenta. Para usar un código de
+        enlace, elige device_auth en la configuración de Spotify del gateway.
+    </string>
+    <string name="spotify_pairing_device_auth">
+        Usa tu código de operador para mostrar un código de enlace de Spotify y sigue las
+        instrucciones en el teléfono.
+    </string>
+    <string name="spotify_pairing_ready">
+        La cuenta de Spotify está conectada. Vuelve a la pestaña Spotify para activar el receptor.
+    </string>
+    <string name="playback_starting">Iniciando reproducción…</string>
+    <string name="playback_taking_longer">
+        La reproducción tarda más de lo esperado. Revisa la red si no comienza.
+    </string>
+    <string name="playback_start_failed">
+        No se pudo iniciar la reproducción. Inténtalo de nuevo.
+    </string>
+    <string name="spotify_intro">Receptor de audio y reproductor Spotify Connect.</string>
+    <string name="spotify_receive_title">Reproducción y sesión</string>
+    <string name="spotify_receiver_online">
+        Receptor en línea; podría requerirse conectar una cuenta de Spotify.
+    </string>
+    <string name="spotify_receiver_disabled">
+        El receptor de Spotify está desactivado en la configuración del gateway.
+    </string>
+    <string name="spotify_receiver_unavailable">
+        El worker de Spotify no está disponible o está degradado. Revisa los servicios del gateway.
+    </string>
+    <string name="spotify_receiver_auth_required">
+        Se requiere conectar una cuenta de Spotify. Abre las opciones de cuenta para usar el código
+        de enlace del gateway.
+    </string>
+    <string name="spotify_receiver_auth_zeroconf">
+        Activa el receptor y luego busca Zombie Box en la app de Spotify de tu teléfono.
+    </string>
+    <string name="spotify_receiver_checking">Comprobando el estado del receptor de Spotify…</string>
+    <string name="spotify_connect_account">Conectar cuenta de Spotify</string>
+    <string name="spotify_activate_receiver">Activar receptor de Spotify</string>
+    <string name="spotify_idle_title">Sin reproducción activa de Spotify</string>
+    <string name="spotify_idle_detail">
+        Activa el receptor. Si Zombie Box aparece en tu app de Spotify, selecciónalo allí; también
+        puedes usar la opción para conectar la cuenta si hace falta.
+    </string>
+    <string name="spotify_now_playing">Reproduciendo en Spotify</string>
+    <string name="open_player">Abrir reproductor</string>
+    <string name="idle">En espera</string>
     <string name="music_resume">Reanudar Spotify</string>
     <string name="music_pause">Pausar Spotify</string>
     <string name="music_previous">Pista anterior</string>
@@ -219,6 +275,12 @@
     </string>
     <string name="provider_service_unavailable">
         Este servicio no está disponible ahora. Revisa su estado en el gateway.
+    </string>
+    <string name="provider_service_auth_required">
+        Este servicio necesita autorización. Abre Servicios para conectar su cuenta o credenciales.
+    </string>
+    <string name="provider_service_waiting">
+        Esperando el estado del servicio desde el gateway…
     </string>
     <string name="mirror_waiting_for_stream">Esperando transmisión</string>
     <string name="implementation_pending">Implementación pendiente</string>
@@ -299,6 +361,7 @@
     </string>
     <string name="catalog_folder">Abrir colección</string>
     <string name="media_receiver">Recibir Spotify / AirPlay</string>
+    <string name="receiver_selected">%1$s seleccionado para recibir en esta TV.</string>
     <string name="playback_failed">Reproducción interrumpida</string>
     <string name="playback_recovery_help">
         Reintenta con un formato más compatible o abre este contenido en otro reproductor.
@@ -357,6 +420,9 @@
     <string name="search_count">%1$d resultados</string>
     <string name="search_partial">No disponible: %1$s</string>
     <string name="search_more">Ver más de %1$s</string>
+    <string name="search_provider_instruction">
+        Escribe al menos dos caracteres para buscar en %1$s
+    </string>
     <string name="surface_backend">Salida de video</string>
     <string name="texture_verified">TextureView (requiere un probe satisfactorio)</string>
     <string name="surface_restart">

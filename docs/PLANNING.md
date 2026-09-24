@@ -1,5 +1,20 @@
 # zombiebox-client: component work
 
+## dev.51 provider navigation and receiver account states
+
+Use full-screen, dark D-pad search for catalog providers and guard unsupported
+catalog routes, including AirPlay. Keep empty-state actions tied to service
+readiness. The Spotify tab reads the gateway integration state and authorization
+mode, distinguishes an unpaired account from an unavailable worker, and offers
+receiver selection plus the selected Zeroconf or device-code guidance. The
+AirPlay tab exposes receiver selection beside its PIN and audio controls.
+Browser keyboard Back/Up returns to an enabled control. Playback requests show
+bounded start, delay and failure feedback; this does not resolve the observed
+Vizio YouTube playback failure. APK versionCode 51 is a local source/build
+checkpoint. Device behavior, iOS AirPlay media, Spotify discovery/account
+pairing, browser focus, YouTube playback and full TV UX acceptance still need
+physical retesting. No product milestone closes.
+
 ## dev.50 TV shell and first Vizio follow-up
 
 Bundle Barlow and crisp service marks, give service cards distinct accent

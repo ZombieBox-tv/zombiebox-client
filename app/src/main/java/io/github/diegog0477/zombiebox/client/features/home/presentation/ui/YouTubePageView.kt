@@ -18,6 +18,7 @@ import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
 import io.github.diegog0477.zombiebox.client.features.artwork.platform.ArtworkDecoder
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.ArtworkImageView
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel.ArtworkViewModel
+import io.github.diegog0477.zombiebox.client.features.catalog.presentation.ui.CatalogUiPolicy
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeSnapshot
 
 /**
@@ -48,6 +49,10 @@ class YouTubePageView(
                 .filter { it.provider == "youtube" || it.provider.isEmpty() }
         val hasContent = featured != null || items.isNotEmpty()
 
+        val isReady = CatalogUiPolicy.isReady(serviceState)
+        val canSearch = isReady && CatalogUiPolicy.supportsSearch("youtube")
+        val canCatalog = CatalogUiPolicy.canBrowseLibrary("youtube", serviceState)
+
         val leadRow = ui.row().apply { setPadding(0, ui.dp(10), 0, ui.dp(8)) }
         leadRow.addView(
             ui.text(context.getString(R.string.youtube), 22f).apply { typeface = ui.bold },
@@ -65,7 +70,7 @@ class YouTubePageView(
                 setOnClickListener { actions.searchProvider("youtube") }
                 layoutParams = LinearLayout.LayoutParams(ui.dp(46), ui.dp(46))
             }
-        if (serviceState != "DISABLED") leadRow.addView(searchAction)
+        if (canSearch) leadRow.addView(searchAction)
 
         val catalogAction =
             ui.button(R.string.view_all) { actions.catalog("youtube") }
@@ -73,7 +78,7 @@ class YouTubePageView(
                     tag = "youtube:action:catalog"
                     textSize = 12f
                 }
-        if (hasContent && serviceState != "DISABLED") leadRow.addView(catalogAction)
+        if (hasContent && canCatalog) leadRow.addView(catalogAction)
 
         val receiverAction =
             ui.button(R.string.youtube_receiver) { actions.youtubeReceiver() }

@@ -18,6 +18,7 @@ import io.github.diegog0477.zombiebox.client.core.ui.WindowedRow
 import io.github.diegog0477.zombiebox.client.features.artwork.platform.ArtworkDecoder
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.ArtworkImageView
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel.ArtworkViewModel
+import io.github.diegog0477.zombiebox.client.features.catalog.presentation.ui.CatalogUiPolicy
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeBudget
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeSnapshot
 
@@ -49,6 +50,10 @@ class ProviderPosterPageView(
 
         val serviceState = snapshot.modules.firstOrNull { it.id == provider }?.state
 
+        val isReady = CatalogUiPolicy.isReady(serviceState)
+        val canSearch = isReady && CatalogUiPolicy.supportsSearch(provider)
+        val canCatalog = CatalogUiPolicy.canBrowseLibrary(provider, serviceState)
+
         // Keep discovery in the app header. Catalog browsing is available after the posters,
         // while service configuration appears only in a disabled service's empty state.
         val leadRow = ui.row().apply { setPadding(0, ui.dp(10), 0, ui.dp(8)) }
@@ -56,7 +61,7 @@ class ProviderPosterPageView(
             ui.text(ui.serviceTitle(provider), 22f).apply { typeface = ui.bold },
             LinearLayout.LayoutParams(0, -2, 1f),
         )
-        if (serviceState != "DISABLED") {
+        if (canSearch) {
             val searchBtn =
                 ImageButton(context).apply {
                     contentDescription =
@@ -103,6 +108,7 @@ class ProviderPosterPageView(
                     physicalMb = physicalMb,
                     tv = tv,
                     focusRows = focusRows,
+                    canCatalog = canCatalog,
                 )
             }
         } else if (sectionsWithItems.size == 1) {
@@ -115,6 +121,7 @@ class ProviderPosterPageView(
                 isDockedLandscape = isDockedLandscape,
                 widthDp = widthDp,
                 focusRows = focusRows,
+                canCatalog = canCatalog,
             )
         }
     }
@@ -190,6 +197,7 @@ class ProviderPosterPageView(
         isDockedLandscape: Boolean,
         widthDp: Float,
         focusRows: ArrayList<Pair<String, ViewGroup>>,
+        canCatalog: Boolean,
     ) {
         parent.addView(
             ui.text(sectionTitle(sectionId), 18f).apply {
@@ -240,13 +248,17 @@ class ProviderPosterPageView(
         }
 
         // View All Catalog Footer Button
-        val footerRow = ui.row().apply { setPadding(ui.dp(4), ui.dp(8), 0, ui.dp(12)) }
-        val catalogFooterBtn =
-            ui.button(R.string.view_all) { actions.catalog(provider) }
-                .apply { tag = "$provider:footer:catalog" }
-        footerRow.addView(catalogFooterBtn)
-        parent.addView(footerRow)
-        focusRows.add(Pair("$provider:footer", footerRow))
+        if (canCatalog) {
+            val footerRow = ui.row().apply { setPadding(ui.dp(4), ui.dp(8), 0, ui.dp(12)) }
+            val catalogFooterBtn =
+                ui.button(R.string.view_all) {
+                        if (CatalogUiPolicy.supportsCatalog(provider)) actions.catalog(provider)
+                    }
+                    .apply { tag = "$provider:footer:catalog" }
+            footerRow.addView(catalogFooterBtn)
+            parent.addView(footerRow)
+            focusRows.add(Pair("$provider:footer", footerRow))
+        }
     }
 
     private fun createGridPosterCard(item: MediaItem, sectionId: String): View {
@@ -310,6 +322,7 @@ class ProviderPosterPageView(
         physicalMb: Int,
         tv: Boolean,
         focusRows: ArrayList<Pair<String, ViewGroup>>,
+        canCatalog: Boolean,
     ) {
         parent.addView(
             ui.text(sectionTitle(sectionId), 18f).apply {
@@ -319,13 +332,16 @@ class ProviderPosterPageView(
         )
 
         val keys =
-            items.map { "item:$provider:$sectionId:${it.id}" } + listOf("all:$provider:$sectionId")
+            items.map { "item:$provider:$sectionId:${it.id}" } +
+                if (canCatalog) listOf("all:$provider:$sectionId") else emptyList()
         val capacity = HomeBudget.rowCapacity(heapMb, physicalMb, tv)
 
         val line =
             WindowedRow(context, keys, capacity) { index ->
                 if (index == items.size) {
-                    ui.button(R.string.view_all) { actions.catalog(provider) }
+                    ui.button(R.string.view_all) {
+                            if (CatalogUiPolicy.supportsCatalog(provider)) actions.catalog(provider)
+                        }
                         .apply { tag = "all:$provider:$sectionId" }
                 } else {
                     val item = items[index]

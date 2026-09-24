@@ -460,11 +460,9 @@ class SearchDialog(private val activity: Activity, private val model: SearchView
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
         }
-        if (draft.isEmpty()) {
-            rootView.post {
-                if (dialog.isShowing && !model.bookmark.resultsFocused) {
-                    keyboard.focusDefaultKey()
-                }
+        rootView.post {
+            if (dialog.isShowing && !model.bookmark.resultsFocused) {
+                keyboard.focusDefaultKey()
             }
         }
         capture {

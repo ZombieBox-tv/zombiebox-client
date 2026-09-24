@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import io.github.diegog0477.zombiebox.client.R
 import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
+import io.github.diegog0477.zombiebox.client.features.catalog.presentation.ui.CatalogUiPolicy
 
 /**
  * Truthful, polished empty state for provider tabs with no available content items. Never invents
@@ -61,14 +62,15 @@ class ProviderEmptyStateView(
     fun attachActions(focusRows: ArrayList<Pair<String, ViewGroup>>) {
         val actionsRow = ui.row().apply { gravity = Gravity.CENTER }
 
-        if (serviceState == "DISABLED") {
+        val isReady = CatalogUiPolicy.isReady(serviceState)
+        val canBrowse = CatalogUiPolicy.canBrowseLibrary(provider, serviceState)
+
+        if (serviceState == "DISABLED" || serviceState == "AUTH_REQUIRED") {
             actionsRow.addView(
                 ui.button(R.string.configure_services) { actions.providers() }
                     .apply { tag = "$provider:empty:settings" }
             )
-        } else if (
-            serviceState != "UNAVAILABLE" && provider in setOf("plex", "stremio", "jellyfin")
-        ) {
+        } else if (canBrowse && provider in setOf("plex", "stremio", "jellyfin")) {
             val catalogBtn =
                 ui.button(R.string.browse_library) { actions.catalog(provider) }
                     .apply { tag = "$provider:empty:catalog" }
@@ -76,12 +78,12 @@ class ProviderEmptyStateView(
         }
 
         // Optional receiver/pairing actions
-        if (provider == "youtube" && serviceState != "DISABLED") {
+        if (provider == "youtube" && isReady) {
             val receiverBtn =
                 ui.button(R.string.youtube_receiver) { actions.youtubeReceiver() }
                     .apply { tag = "$provider:empty:receiver" }
             actionsRow.addView(receiverBtn)
-        } else if (provider == "airplay" && serviceState != "DISABLED") {
+        } else if (provider == "airplay" && isReady) {
             val pinBtn =
                 ui.primary(R.string.airplay_show_pin) { actions.airplayPairing() }
                     .apply { tag = "$provider:empty:airplay_pin" }
@@ -97,7 +99,13 @@ class ProviderEmptyStateView(
     private fun truthfulMessage(provider: String): String =
         when (serviceState) {
             "DISABLED" -> context.getString(R.string.provider_service_disabled)
-            "UNAVAILABLE" -> context.getString(R.string.provider_service_unavailable)
+            "AUTH_REQUIRED" -> context.getString(R.string.provider_service_auth_required)
+            "UNAVAILABLE",
+            "DEGRADED" -> context.getString(R.string.provider_service_unavailable)
+            "STARTING",
+            "WAITING",
+            "BUFFERING",
+            null -> context.getString(R.string.provider_service_waiting)
             else ->
                 when (provider) {
                     "youtube" -> context.getString(R.string.youtube_empty_home)

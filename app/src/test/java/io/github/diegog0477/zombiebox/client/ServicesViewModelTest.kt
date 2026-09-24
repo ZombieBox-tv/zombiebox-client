@@ -29,4 +29,13 @@ class ServicesViewModelTest {
         assertNull(model.state.prompt)
         assertNull(model.observer)
     }
+
+    @Test
+    fun extraSpotifyFocusedConstantIsDefined() {
+        assertEquals(
+            "spotify_focused",
+            io.github.diegog0477.zombiebox.client.features.services.presentation.ui.ServicesActivity
+                .EXTRA_SPOTIFY_FOCUSED,
+        )
+    }
 }

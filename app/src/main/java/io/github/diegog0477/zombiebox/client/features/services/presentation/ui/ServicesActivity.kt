@@ -7,8 +7,11 @@ import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.text.InputType
+import android.view.View
+import android.view.WindowManager
 import android.widget.*
 import io.github.diegog0477.zombiebox.client.R
+import io.github.diegog0477.zombiebox.client.core.ui.TvKeyboardOverlay
 import io.github.diegog0477.zombiebox.client.core.ui.TvTypography
 import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
 import io.github.diegog0477.zombiebox.client.features.services.data.GatewayServicesRepository
@@ -18,6 +21,10 @@ import java.util.concurrent.Executors
 
 /** Views own focus and rendering; semantic data and work stay behind MVVM. */
 class ServicesActivity : Activity() {
+    companion object {
+        const val EXTRA_SPOTIFY_FOCUSED = "spotify_focused"
+    }
+
     private val ui by lazy { TvWidgets(this) }
     private val api = GatewayApi()
     private val executor = Executors.newSingleThreadExecutor()
@@ -89,21 +96,65 @@ class ServicesActivity : Activity() {
         val refresh = button(R.string.refresh_services) { model.refresh() }
         label(R.string.spotify).textSize = 24f
         val track = label(R.string.unavailable)
+        val isSpotifyFocused = intent?.getBooleanExtra(EXTRA_SPOTIFY_FOCUSED, false) == true
+        val pairingGuide = label(R.string.spotify_pairing_checking)
+        pairingGuide.visibility = if (isSpotifyFocused) View.VISIBLE else View.GONE
         code =
             EditText(this).apply {
                 setHint(R.string.operator_code)
                 setHintTextColor(Color.LTGRAY)
                 setTextColor(Color.WHITE)
                 typeface = TvTypography.regular(this@ServicesActivity)
-                setBackgroundDrawable(ui.box(ui.panel, ui.muted))
+                setBackgroundDrawable(
+                    ui.box(
+                        ui.panel,
+                        if (isSpotifyFocused) ui.providerAccent("spotify") else ui.muted,
+                    )
+                )
                 setPadding(ui.dp(12), 0, ui.dp(12), 0)
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 setSingleLine(true)
+                filters = arrayOf(android.text.InputFilter.LengthFilter(6))
                 isSaveEnabled = false
+                setOnClickListener {
+                    TvKeyboardOverlay.show(
+                        this@ServicesActivity,
+                        this,
+                        getString(R.string.operator_code),
+                    )
+                }
             }
         root.addView(code)
         val buttons = arrayListOf<Button>()
-        buttons.add(button(R.string.spotify_authorize) { useCode { model.authorize(it) } })
+        val authorizeButton = button(R.string.spotify_authorize) { useCode { model.authorize(it) } }
+        if (isSpotifyFocused) {
+            code.visibility = View.GONE
+            authorizeButton.visibility = View.GONE
+        }
+        if (isSpotifyFocused) {
+            val spotifyAccent = ui.providerAccent("spotify")
+            val focused =
+                GradientDrawable().apply {
+                    setColor(spotifyAccent)
+                    setStroke(ui.dp(3), Color.WHITE)
+                    cornerRadius = ui.dp(10).toFloat()
+                }
+            val normal =
+                GradientDrawable().apply {
+                    setColor(Color.rgb(18, 56, 28))
+                    setStroke(ui.dp(2), spotifyAccent)
+                    cornerRadius = ui.dp(10).toFloat()
+                }
+            authorizeButton.setBackgroundDrawable(
+                StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused), focused)
+                    addState(intArrayOf(android.R.attr.state_pressed), focused)
+                    addState(intArrayOf(), normal)
+                }
+            )
+            authorizeButton.setTextColor(Color.WHITE)
+        }
+        buttons.add(authorizeButton)
         for ((label, command) in
             listOf(
                 R.string.music_resume to "resume",
@@ -112,11 +163,14 @@ class ServicesActivity : Activity() {
                 R.string.music_next to "next",
                 R.string.stop to "stop",
             )) {
-            buttons.add(button(label) { useCode { model.command(command, it) } })
+            val commandButton = button(label) { useCode { model.command(command, it) } }
+            if (isSpotifyFocused) commandButton.visibility = View.GONE
+            buttons.add(commandButton)
         }
         val prompt = label(R.string.no_authorization_pending).apply { isSaveEnabled = false }
         button(R.string.close) { finish() }
         setContentView(ScrollView(this).apply { addView(root) })
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         model.observer = { value ->
             status.setText(
                 if (value.loading) R.string.loading
@@ -132,6 +186,25 @@ class ServicesActivity : Activity() {
                 value.snapshot.music?.let {
                     getString(R.string.music_status, it.title, it.artist, stateName(it.state))
                 } ?: getString(R.string.unavailable)
+            if (isSpotifyFocused) {
+                val spotify = value.snapshot.integrations.firstOrNull { it.id == "spotify" }
+                val codeAvailable =
+                    spotify != null &&
+                        spotify.state == "AUTH_REQUIRED" &&
+                        (spotify.authMode == "device_auth" || spotify.authMode.isEmpty())
+                pairingGuide.setText(
+                    when {
+                        value.loading -> R.string.spotify_pairing_checking
+                        value.failed || spotify == null -> R.string.spotify_pairing_unavailable
+                        spotify.authMode == "zeroconf" -> R.string.spotify_pairing_zeroconf
+                        spotify.state == "READY" -> R.string.spotify_pairing_ready
+                        codeAvailable -> R.string.spotify_pairing_device_auth
+                        else -> R.string.spotify_pairing_unavailable
+                    }
+                )
+                code.visibility = if (codeAvailable) View.VISIBLE else View.GONE
+                authorizeButton.visibility = if (codeAvailable) View.VISIBLE else View.GONE
+            }
             prompt.text =
                 value.prompt?.let {
                     if (it.waiting) getString(R.string.authorization_code, it.url, it.code)

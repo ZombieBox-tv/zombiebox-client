@@ -558,7 +558,7 @@ class BrowserActivity : Activity() {
             val focused = currentFocus
             if (event.keyCode == KeyEvent.KEYCODE_BACK && keyboard.visibility == View.VISIBLE) {
                 consumedBackDown = true
-                hideKeyboard(restoreFocusTo = activeTarget ?: pageControl)
+                hideKeyboard(restoreFocusTo = activeTarget ?: openButton)
                 return true
             }
             if (focused === pageView) {
@@ -580,14 +580,16 @@ class BrowserActivity : Activity() {
                     }
                     KeyEvent.KEYCODE_DPAD_UP -> {
                         if (focused === addressField) {
-                            showKeyboard(textField, focusKey = false)
-                            textField.requestFocus()
+                            if (keyboard.visibility == View.VISIBLE) {
+                                hideKeyboard(restoreFocusTo = addressField)
+                            }
                             return true
                         } else if (focused === textField) {
                             if (keyboard.visibility == View.VISIBLE) {
                                 hideKeyboard()
                             }
-                            pageControl.requestFocus()
+                            if (pageControl.isEnabled) pageControl.requestFocus()
+                            else openButton.requestFocus()
                             return true
                         }
                     }
@@ -630,7 +632,7 @@ class BrowserActivity : Activity() {
 
     override fun onBackPressed() {
         if (keyboard.visibility == View.VISIBLE) {
-            hideKeyboard(restoreFocusTo = activeTarget ?: pageControl)
+            hideKeyboard(restoreFocusTo = activeTarget ?: openButton)
             return
         }
         if (currentFocus === pageView) pageControl.requestFocus() else super.onBackPressed()

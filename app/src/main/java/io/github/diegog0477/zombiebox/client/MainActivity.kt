@@ -70,6 +70,7 @@ import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.V
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.VideoOutputView
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.viewmodel.PlaybackViewModel
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.viewmodel.TracksViewModel
+import io.github.diegog0477.zombiebox.client.features.services.presentation.ui.ServicesActivity
 import io.github.diegog0477.zombiebox.client.features.settings.data.GatewaySettingsRepository
 import io.github.diegog0477.zombiebox.client.features.settings.platform.SettingsSavedState
 import io.github.diegog0477.zombiebox.client.features.settings.presentation.ui.SettingsActions
@@ -345,6 +346,7 @@ class MainActivity : Activity() {
     private var itemTitle = ""
     private val playbackFailure by lazy { PlaybackFailureDialog(this) }
     private var playbackPending = false
+    private var playbackFeedbackGeneration = 0
     private var playbackLive = false
     private var receiverState = ""
     private lateinit var receiverInfo: TextView
@@ -405,6 +407,7 @@ class MainActivity : Activity() {
                     devices = { settingsDialogs.devices() },
                     youtubeReceiver = { youtubeReceiverSettings() },
                     airplayPairing = { airplayPairing() },
+                    airplayReceive = { armMediaReceiver("airplay") },
                     airplayAudioOptions = { mediaReceiverSettings() },
                     airplayConfigure = { settingsDialogs.providers(selectedKey = "airplay") },
                     catalog = { provider -> catalogPage(provider) },
@@ -422,6 +425,8 @@ class MainActivity : Activity() {
                         }
                     },
                     expand = { if (session.isNotEmpty()) togglePlayerSize() },
+                    spotifyAuthorize = { spotifyAuthorize() },
+                    spotifyReceive = { armMediaReceiver("spotify") },
                 ),
             )
         content.setPadding(ui.dp(22), ui.dp(16), ui.dp(22), ui.dp(18))
@@ -754,12 +759,41 @@ class MainActivity : Activity() {
             pairing()
             return
         }
-        MediaReceiverDialog(this, receiverViewModel, ::error) { provider ->
-                player.configureReceivers(mediaProvider = provider)
-                universalReception = provider == "universal"
-                if (universalReception) player.enableYouTube() else player.disableYouTube()
+        MediaReceiverDialog(this, receiverViewModel, ::error, ::applyMediaReceiverSelection).show()
+    }
+
+    private fun applyMediaReceiverSelection(provider: String) {
+        player.configureReceivers(mediaProvider = provider)
+        universalReception = provider == "universal"
+        if (universalReception) player.enableYouTube() else player.disableYouTube()
+    }
+
+    private fun armMediaReceiver(provider: String) {
+        if (api.token.isEmpty()) {
+            pairing()
+            return
+        }
+        receiverViewModel.selectMediaProvider(provider, ::error) {
+            applyMediaReceiverSelection(provider)
+            Toast.makeText(
+                    this,
+                    getString(R.string.receiver_selected, ui.serviceTitle(provider)),
+                    Toast.LENGTH_SHORT,
+                )
+                .show()
+        }
+    }
+
+    private fun spotifyAuthorize() {
+        if (api.token.isEmpty()) {
+            pairing()
+            return
+        }
+        startActivity(
+            Intent(this, ServicesActivity::class.java).apply {
+                putExtra(ServicesActivity.EXTRA_SPOTIFY_FOCUSED, true)
             }
-            .show()
+        )
     }
 
     private fun airplayPairing() {
@@ -1162,6 +1196,16 @@ class MainActivity : Activity() {
                 }
         stopPlayback()
         playbackPending = true
+        showPlaybackFeedback(R.string.playback_starting)
+        val requestFeedback = playbackFeedbackGeneration
+        handler.postDelayed(
+            {
+                if (!closed && playbackPending && requestFeedback == playbackFeedbackGeneration) {
+                    showPlaybackFeedback(R.string.playback_taking_longer, 10000)
+                }
+            },
+            40000,
+        )
         playbackModel.start(
             item.id,
             prefs.getString("playbackMode", "AUTO") ?: "AUTO",
@@ -1169,8 +1213,10 @@ class MainActivity : Activity() {
                 playbackPending = false
                 if (!foreground || !player.ready) {
                     playbackModel.stop(plan.sessionId, null)
+                    showPlaybackFeedback(R.string.playback_start_failed, 10000)
                     return@start
                 }
+                showPlaybackFeedback(null)
                 adoptPlan(plan)
                 attachTracks(plan)
                 currentItem = item
@@ -1200,10 +1246,25 @@ class MainActivity : Activity() {
             },
             failed = { failure ->
                 playbackPending = false
+                showPlaybackFeedback(R.string.playback_start_failed, 10000)
                 error(failure)
             },
             positionMs = positionMs,
         )
+    }
+
+    private fun showPlaybackFeedback(message: Int?, timeoutMs: Long = 0) {
+        val generation = ++playbackFeedbackGeneration
+        if (::content.isInitialized) content.playbackFeedback(message)
+        if (message != null && timeoutMs > 0) {
+            handler.postDelayed(
+                {
+                    if (!closed && generation == playbackFeedbackGeneration)
+                        showPlaybackFeedback(null)
+                },
+                timeoutMs,
+            )
+        }
     }
 
     private fun showPlaybackFailure() {
@@ -1385,6 +1446,7 @@ class MainActivity : Activity() {
     private fun stopPlayback(keepReceiver: Boolean = false, endSession: Boolean = true) {
         playbackFailure.dismiss()
         playbackPending = false
+        showPlaybackFeedback(null)
         if (!keepReceiver && receiverViewModel.activeSession.isNotEmpty())
             receiverViewModel.dismiss(receiverViewModel.activeSession)
         currentItem = null

@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.text.TextUtils
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -24,6 +25,7 @@ import io.github.diegog0477.zombiebox.client.features.catalog.domain.model.Catal
 import io.github.diegog0477.zombiebox.client.features.catalog.domain.model.SearchBookmark
 import io.github.diegog0477.zombiebox.client.features.catalog.presentation.viewmodel.CatalogViewModel
 import io.github.diegog0477.zombiebox.client.features.catalog.presentation.viewmodel.SearchViewModel
+import io.github.diegog0477.zombiebox.client.features.home.presentation.ui.ServiceMarkView
 import java.util.Locale
 
 class CatalogDialogs(
@@ -148,6 +150,10 @@ class CatalogDialogs(
                 )
             return
         }
+        val targetProvider = path.lastOrNull()?.location?.provider
+        if (targetProvider != null && !CatalogUiPolicy.supportsCatalog(targetProvider)) {
+            return
+        }
         val work = {
             model.restore(
                 path,
@@ -260,39 +266,109 @@ class CatalogDialogs(
     }
 
     fun page(provider: String) {
+        if (!CatalogUiPolicy.supportsCatalog(provider)) return
         searchOrigin = false
         load { model.open(provider, query(), ::showPage, ::loadFailed) }
     }
 
     fun promptProviderSearch(provider: String) {
+        if (!CatalogUiPolicy.supportsSearch(provider)) return
         searchOrigin = false
         showProviderSearch(provider, "", false)
     }
 
     private fun showProviderSearch(provider: String, draft: String, returnToCatalog: Boolean) {
+        if (!CatalogUiPolicy.supportsSearch(provider)) return
         val previousOverlay = overlay
         overlay = null
         previousOverlay?.dismiss()
         browser?.dismiss()
         val accent = ui.providerAccent(provider)
-        val heading = activity.getString(R.string.search_provider, ui.serviceTitle(provider))
+        val serviceTitle = ui.serviceTitle(provider)
+        val heading = activity.getString(R.string.search_provider, serviceTitle)
+        val mark = ServiceMarkView(activity, provider, accent)
+        var dialogRef: AlertDialog? = null
+        val closeAction =
+            Button(activity).apply {
+                text = activity.getString(R.string.close)
+                typeface = ui.bold
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                isFocusable = true
+                setBackgroundDrawable(ui.focusBackground(accent))
+                setPadding(ui.dp(16), ui.dp(6), ui.dp(16), ui.dp(6))
+                setOnClickListener { dialogRef?.dismiss() }
+            }
+        val header =
+            ui.row().apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(
+                    mark,
+                    LinearLayout.LayoutParams(ui.dp(36), ui.dp(36)).apply {
+                        rightMargin = ui.dp(14)
+                    },
+                )
+                val titleCol =
+                    ui.column().apply {
+                        addView(
+                            ui.text(serviceTitle.uppercase(Locale.US), 12f, accent).apply {
+                                typeface = ui.bold
+                            }
+                        )
+                        addView(
+                            ui.text(heading, 22f).apply {
+                                typeface = ui.bold
+                                setSingleLine(true)
+                                ellipsize = TextUtils.TruncateAt.END
+                            }
+                        )
+                    }
+                addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(closeAction, LinearLayout.LayoutParams(-2, ui.dp(40)))
+            }
+
         val input =
             EditText(activity).apply {
                 setSingleLine(true)
                 setTextColor(Color.WHITE)
                 setHintTextColor(ui.muted)
-                setBackgroundDrawable(ui.focusBackground(accent))
-                setPadding(ui.dp(12), 0, ui.dp(12), 0)
+                setBackgroundDrawable(
+                    android.graphics.drawable.StateListDrawable().apply {
+                        addState(
+                            intArrayOf(android.R.attr.state_focused),
+                            TvTheme.roundedBox(
+                                ui.dp(8).toFloat(),
+                                Color.rgb(26, 34, 37),
+                                ui.dp(2),
+                                accent,
+                            ),
+                        )
+                        addState(
+                            intArrayOf(),
+                            TvTheme.roundedBox(
+                                ui.dp(8).toFloat(),
+                                TvTheme.inputBackground,
+                                ui.dp(1),
+                                TvTheme.inputBorder,
+                            ),
+                        )
+                    }
+                )
+                setPadding(ui.dp(14), 0, ui.dp(14), 0)
                 filters = arrayOf(android.text.InputFilter.LengthFilter(100))
                 hint = heading
                 typeface = TvTypography.regular(activity)
                 setText(draft)
             }
-        var dialogRef: AlertDialog? = null
+
         var submitted = false
         fun submit() {
             val phrase = input.text.toString().trim()
-            if (phrase.length < 2) return
+            if (!CatalogUiPolicy.isValidSearchQuery(phrase)) {
+                input.requestFocus()
+                input.setSelection(input.text?.length ?: 0)
+                return
+            }
             submitted = true
             dialogRef?.dismiss()
             load {
@@ -300,34 +376,140 @@ class CatalogDialogs(
                 else model.open(provider, phrase, ::showPage, ::loadFailed)
             }
         }
+
+        val searchAction =
+            Button(activity).apply {
+                text = activity.getString(R.string.search)
+                typeface = ui.bold
+                textSize = 14f
+                setTextColor(Color.WHITE)
+                isFocusable = true
+                setBackgroundDrawable(ui.focusBackground(accent))
+                setPadding(ui.dp(18), ui.dp(6), ui.dp(18), ui.dp(6))
+                setOnClickListener { submit() }
+            }
+
+        val inputRow =
+            ui.row().apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(
+                    input,
+                    LinearLayout.LayoutParams(0, ui.dp(48), 1f).apply { rightMargin = ui.dp(10) },
+                )
+                addView(searchAction, LinearLayout.LayoutParams(-2, ui.dp(48)))
+            }
+
+        val instruction =
+            ui.text(
+                activity.getString(R.string.search_provider_instruction, serviceTitle),
+                13f,
+                ui.muted,
+            )
+
         val keyboard =
             TvDpadKeyboard(activity).apply {
                 attachTarget(input)
                 maxTextLength = 100
                 setOnDone { submit() }
             }
+        keyboard.nextUpFocusView = input
+
+        val cancelAction = ui.button(R.string.cancel) { dialogRef?.dismiss() }
+        keyboard.nextDownFocusView = cancelAction
+
+        input.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        keyboard.focusDefaultKey()
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP -> {
+                        closeAction.requestFocus()
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (input.selectionStart == (input.text?.length ?: 0)) {
+                            searchAction.requestFocus()
+                            true
+                        } else false
+                    }
+                    else -> false
+                }
+            } else false
+        }
+
+        searchAction.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        input.requestFocus()
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        keyboard.focusDefaultKey()
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP -> {
+                        closeAction.requestFocus()
+                        true
+                    }
+                    else -> false
+                }
+            } else false
+        }
+
+        closeAction.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                input.requestFocus()
+                true
+            } else false
+        }
+
+        cancelAction.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                keyboard.focusDefaultKey()
+                true
+            } else false
+        }
+
         val page =
             ui.column().apply {
-                setBackgroundColor(TvTheme.shellBackground)
-                setPadding(ui.dp(28), ui.dp(22), ui.dp(28), ui.dp(22))
+                setPadding(ui.dp(24), ui.dp(20), ui.dp(24), ui.dp(20))
+                addView(header)
+                addView(inputRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(8) })
                 addView(
-                    ui.text(heading, 26f).apply {
-                        typeface = ui.bold
-                        setPadding(0, 0, 0, ui.dp(16))
-                    }
+                    instruction,
+                    LinearLayout.LayoutParams(-1, -2).apply {
+                        topMargin = ui.dp(6)
+                        leftMargin = ui.dp(4)
+                    },
                 )
-                addView(input, LinearLayout.LayoutParams(-1, ui.dp(52)))
-                addView(ui.text(activity.getString(R.string.search_all_hint), 13f, ui.muted))
-                addView(keyboard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(14) })
+                addView(keyboard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(16) })
                 addView(
                     ui.row().apply {
-                        addView(ui.action(activity.getString(R.string.search), accent) { submit() })
-                        addView(ui.button(R.string.cancel) { dialogRef?.dismiss() })
+                        gravity = Gravity.CENTER
+                        addView(cancelAction, LinearLayout.LayoutParams(ui.dp(180), ui.dp(44)))
                     },
                     LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(16) },
                 )
             }
-        val dialog = AlertDialog.Builder(activity).setView(page).create()
+
+        val scroll =
+            ScrollView(activity).apply {
+                isFillViewport = true
+                setBackgroundColor(TvTheme.shellBackground)
+                addView(page)
+            }
+
+        val frame =
+            FrameLayout(activity).apply {
+                setBackgroundColor(TvTheme.shellBackground)
+                val width = minOf(activity.resources.displayMetrics.widthPixels, ui.dp(820))
+                addView(scroll, FrameLayout.LayoutParams(width, -1, Gravity.CENTER_HORIZONTAL))
+            }
+
+        val dialog = AlertDialog.Builder(activity).setView(frame).create()
         dialogRef = dialog
         overlayCapture = { CatalogOverlay("provider_search", input.text.toString().take(100)) }
         dialog.setOnDismissListener {
@@ -345,7 +527,7 @@ class CatalogDialogs(
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
         }
-        page.post { if (dialog.isShowing) keyboard.focusDefaultKey() }
+        frame.post { if (dialog.isShowing) keyboard.focusDefaultKey() }
     }
 
     private fun load(work: () -> Unit) {
@@ -409,13 +591,18 @@ class CatalogDialogs(
     }
 
     private fun showPage(screen: CatalogScreen) {
+        val provider = screen.location.provider
+        if (!CatalogUiPolicy.supportsCatalog(provider)) {
+            browser?.dismiss()
+            browser = null
+            return
+        }
         categoryDialog?.dismiss()
         categoryDialog = null
         detailItemId = ""
         detail?.dismiss()
         detail = null
         browser?.dismiss()
-        val provider = screen.location.provider
         val accent = ui.providerAccent(provider)
         val list = CatalogListView(activity, screen, accent, artwork)
         fun remember() {
@@ -518,12 +705,14 @@ class CatalogDialogs(
                                         }
                                     )
                                 }
-                                addView(
-                                    ui.action(activity.getString(R.string.search), accent) {
-                                        remember()
-                                        searchPage(screen)
-                                    }
-                                )
+                                if (CatalogUiPolicy.supportsSearch(provider)) {
+                                    addView(
+                                        ui.action(activity.getString(R.string.search), accent) {
+                                            remember()
+                                            searchPage(screen)
+                                        }
+                                    )
+                                }
                                 if (model.canBack || searchOrigin) {
                                     addView(ui.button(R.string.back) { back() })
                                 }
@@ -561,16 +750,51 @@ class CatalogDialogs(
                                 ui.text(activity.getString(R.string.catalog_empty), 16f, ui.muted)
                                     .apply { gravity = Gravity.CENTER }
                             )
-                            addView(
-                                ui.action(activity.getString(R.string.search), accent) {
-                                        remember()
-                                        searchPage(screen)
+                            val cta =
+                                when (
+                                    CatalogUiPolicy.resolveEmptyCta(
+                                        provider = provider,
+                                        hasQuery = screen.location.query.isNotEmpty(),
+                                        hasCategory = screen.location.category.isNotEmpty(),
+                                        favoritesOnly = screen.location.favoritesOnly,
+                                        canBack = model.canBack || searchOrigin,
+                                    )
+                                ) {
+                                    CatalogUiPolicy.EmptyCta.BROWSE_LIBRARY -> {
+                                        ui.action(
+                                            activity.getString(R.string.browse_library),
+                                            accent,
+                                        ) {
+                                            remember()
+                                            load {
+                                                model.open(provider, "", ::showPage, ::loadFailed)
+                                            }
+                                        }
                                     }
-                                    .apply {
-                                        (layoutParams as? LinearLayout.LayoutParams)?.topMargin =
-                                            ui.dp(16)
+                                    CatalogUiPolicy.EmptyCta.IPTV_ALL_CATEGORIES -> {
+                                        ui.action(
+                                            activity.getString(R.string.iptv_all_categories),
+                                            accent,
+                                        ) {
+                                            remember()
+                                            load {
+                                                model.openIptvCategory("", ::showPage, ::loadFailed)
+                                            }
+                                        }
                                     }
-                            )
+                                    CatalogUiPolicy.EmptyCta.BACK -> {
+                                        ui.button(R.string.back) { back() }
+                                    }
+                                    CatalogUiPolicy.EmptyCta.NONE -> null
+                                }
+                            cta?.let { button ->
+                                button.layoutParams =
+                                    LinearLayout.LayoutParams(-2, ui.dp(48)).apply {
+                                        topMargin = ui.dp(16)
+                                    }
+                                addView(button)
+                            }
+                            post { if (browser?.isShowing == true) cta?.requestFocus() }
                         }
                     addView(emptyBox, LinearLayout.LayoutParams(-1, -1))
                 } else {
@@ -714,6 +938,7 @@ class CatalogDialogs(
     }
 
     private fun searchPage(screen: CatalogScreen, draft: String = screen.location.query) {
+        if (!CatalogUiPolicy.supportsSearch(screen.location.provider)) return
         showProviderSearch(screen.location.provider, draft, true)
     }
 

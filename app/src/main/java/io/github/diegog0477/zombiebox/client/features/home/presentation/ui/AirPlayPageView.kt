@@ -52,15 +52,28 @@ class AirPlayPageView(
         hero.addView(ui.text(statusDetail(moduleState), 14f, ui.muted))
 
         val controls = ui.row().apply { setPadding(0, ui.dp(12), 0, 0) }
-        controls.addView(
-            ui.primary(R.string.airplay_show_pin) { actions.airplayPairing() }
-                .apply { tag = "airplay:show_pin" }
-        )
-        controls.addView(
-            ui.button(R.string.airplay_audio_options) { actions.airplayAudioOptions() }
-                .apply { tag = "airplay:audio_options" }
-        )
-        if (moduleState != "HEALTHY" && moduleState != "READY") {
+        if (moduleState == "READY" || moduleState == "HEALTHY") {
+            controls.addView(
+                ui.primary(R.string.airplay_receive) { actions.airplayReceive() }
+                    .apply { tag = "airplay:receive" }
+            )
+        }
+        if (moduleState != "DISABLED") {
+            controls.addView(
+                ui.button(R.string.airplay_show_pin) { actions.airplayPairing() }
+                    .apply { tag = "airplay:show_pin" }
+            )
+            controls.addView(
+                ui.button(R.string.airplay_audio_options) { actions.airplayAudioOptions() }
+                    .apply { tag = "airplay:audio_options" }
+            )
+        }
+        if (
+            moduleState == "DISABLED" ||
+                moduleState == "AUTH_REQUIRED" ||
+                moduleState == "DEGRADED" ||
+                moduleState == "UNAVAILABLE"
+        ) {
             controls.addView(
                 ui.button(R.string.airplay_configure) { actions.airplayConfigure() }
                     .apply { tag = "airplay:configure" }

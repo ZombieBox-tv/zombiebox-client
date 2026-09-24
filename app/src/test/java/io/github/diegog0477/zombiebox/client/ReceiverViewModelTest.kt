@@ -22,9 +22,13 @@ class ReceiverViewModelTest {
             stopped.add(sessionId)
         }
 
-        override fun mediaProvider() = ""
+        override fun mediaProvider() = selectedProvider
 
-        override fun selectMediaProvider(provider: String) {}
+        var selectedProvider = ""
+
+        override fun selectMediaProvider(provider: String) {
+            selectedProvider = provider
+        }
 
         override fun command(action: String) {}
 
@@ -137,5 +141,21 @@ class ReceiverViewModelTest {
         assertNull(delivered)
         assertEquals(ReceiverChange.Restore(previous), model.transition(delivered, previous))
         assertNull(model.transition(plan, previous))
+    }
+
+    @Test
+    fun selectMediaProviderUpdatesProviderAndTriggersRefresh() {
+        val repo = Repo()
+        val work = mutableListOf<() -> Unit>()
+        val ui = mutableListOf<() -> Unit>()
+        val model = ReceiverViewModel(repo, { work.add(it) }, { ui.add(it) })
+        var doneCalled = false
+        model.selectMediaProvider("spotify", { fail("selection failed") }) { doneCalled = true }
+        assertEquals(1, work.size)
+        work.removeAt(0)()
+        assertEquals("spotify", repo.selectedProvider)
+        assertEquals(1, ui.size)
+        ui.removeAt(0)()
+        assertTrue(doneCalled)
     }
 }

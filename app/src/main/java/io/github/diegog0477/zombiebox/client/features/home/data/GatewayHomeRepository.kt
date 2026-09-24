@@ -23,6 +23,20 @@ class GatewayHomeRepository(private val api: GatewayApi) : HomeRepository {
             )
         val modules = api.request("GET", "/v1/modules").optJSONArray("modules") ?: JSONArray()
         val sections = home.optJSONArray("sections") ?: JSONArray()
+        val serviceModules =
+            (0 until modules.length()).map {
+                ServiceModule(
+                    modules.getJSONObject(it).optString("id"),
+                    modules.getJSONObject(it).optString("state"),
+                )
+            }
+        // /v1/modules describes catalog-cache health. Spotify account readiness comes from
+        // /v1/integrations and must not be presented as Ready merely because its worker is up.
+        val scopedModules =
+            if (scope.provider == "spotify") {
+                serviceModules.filterNot { it.id == "spotify" } +
+                    (spotifyIntegration() ?: ServiceModule("spotify", "CHECKING"))
+            } else serviceModules
         return HomeSnapshot(
             home.optJSONObject("hero")?.optJSONObject("item")?.let {
                 MediaItemDecoder.decodeItem(it)
@@ -37,12 +51,19 @@ class GatewayHomeRepository(private val api: GatewayApi) : HomeRepository {
                     },
                 )
             },
-            (0 until modules.length()).map {
-                ServiceModule(
-                    modules.getJSONObject(it).optString("id"),
-                    modules.getJSONObject(it).optString("state"),
-                )
-            },
+            scopedModules,
         )
     }
+
+    private fun spotifyIntegration(): ServiceModule? =
+        try {
+            val integrations = api.request("GET", "/v1/integrations").optJSONArray("integrations")
+            (0 until (integrations?.length() ?: 0))
+                .asSequence()
+                .mapNotNull { integrations?.optJSONObject(it) }
+                .firstOrNull { it.optString("id") == "spotify" }
+                ?.let { ServiceModule("spotify", it.optString("state"), it.optString("authMode")) }
+        } catch (_: Exception) {
+            null
+        }
 }
