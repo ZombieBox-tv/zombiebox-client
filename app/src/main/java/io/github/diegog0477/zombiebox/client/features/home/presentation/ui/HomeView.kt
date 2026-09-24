@@ -408,7 +408,15 @@ class HomeView(
                                             setSingleLine(true)
                                         }
                                     )
-                                    addView(ui.text(ui.localizedState(module.state), 11f, ui.muted))
+                                    addView(
+                                        ui.text(
+                                            if (id == "rebrowser" && module.state == "STARTING")
+                                                context.getString(R.string.opens_on_demand)
+                                            else ui.localizedState(module.state),
+                                            11f,
+                                            ui.muted,
+                                        )
+                                    )
                                 }
                             )
                         }

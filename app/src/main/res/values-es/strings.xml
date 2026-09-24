@@ -6,6 +6,7 @@
     <string name="search">Buscar</string>
     <string name="search_provider">Buscar en %1$s</string>
     <string name="devices">Dispositivos</string>
+    <string name="opens_on_demand">Se abre cuando lo usas</string>
     <string name="settings">Configuración</string>
     <string name="play">Reproducir</string>
     <string name="play_pause">Reproducir / Pausar</string>

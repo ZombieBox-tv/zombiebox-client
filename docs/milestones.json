@@ -3,6 +3,7 @@
   "repository": "zombiebox-client",
   "productRegistry": "workspace:docs/milestones.json",
   "notes": [
+    "Dev.49: First QA browser session passed through the running optional worker after a previously missing profile. The idle Browser tile no longer says Loading forever; it says Opens on demand in EN/ES. This is a source/APK candidate only, not Vizio browser acceptance.",
     "Dev.48: Sets APK identity 0.1.0-dev.48 for the first physical QA source corrections committed in dev.47: dark/legible inputs and menus, service marks, Devices and contextual YouTube actions, and an empty-session D-pad fix. Build/lint/JVM checks pass; no new APK is installed or physically accepted.",
     "Dev.46: YouTube OAuth code, account subscription/playlist navigation and operator-confirmed disconnect in Client; real-account and physical TV acceptance remain open.",
     "Dev.45: IPTV category picker and semantic category/search/favorite navigation, EN/ES resources and APK versionCode 45. Physical acceptance remains open.",
@@ -122,6 +123,6 @@
       "remoteURL": "https://github.com/ZombieBox-tv/zombiebox-client/milestone/10"
     }
   ],
-  "developmentCheckpoint": "v0.1.0-dev.48",
+  "developmentCheckpoint": "v0.1.0-dev.49",
   "remote": "https://github.com/ZombieBox-tv/zombiebox-client"
 }

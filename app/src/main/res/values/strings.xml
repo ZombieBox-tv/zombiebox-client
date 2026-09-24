@@ -6,6 +6,7 @@
     <string name="search">Search</string>
     <string name="search_provider">Search %1$s</string>
     <string name="devices">Devices</string>
+    <string name="opens_on_demand">Opens on demand</string>
     <string name="settings">Settings</string>
     <string name="play">Play</string>
     <string name="play_pause">Play / Pause</string>
