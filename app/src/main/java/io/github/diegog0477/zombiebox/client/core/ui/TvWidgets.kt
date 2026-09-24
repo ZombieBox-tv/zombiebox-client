@@ -25,6 +25,9 @@ class TvWidgets(
     val green
         get() = context.resources.getColor(R.color.accent_zombie)
 
+    val bold
+        get() = TvTypography.semibold(context)
+
     fun dp(value: Int) = (value * context.resources.displayMetrics.density + 0.5f).toInt()
 
     fun column() = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
@@ -39,6 +42,7 @@ class TvWidgets(
         TextView(context).apply {
             text = value
             textSize = size
+            typeface = TvTypography.regular(context)
             setTextColor(color)
             setPadding(dp(4), dp(4), dp(4), dp(4))
         }
@@ -57,10 +61,50 @@ class TvWidgets(
             addState(intArrayOf(), box(panel))
         }
 
+    /** Contextual low-contrast surfaces give service cards their own identity. */
+    fun serviceCardBackground(id: String): StateListDrawable {
+        val color = providerAccent(id)
+        val orientation =
+            when (id) {
+                "plex",
+                "spotify" -> GradientDrawable.Orientation.RIGHT_LEFT
+                "youtube",
+                "stremio" -> GradientDrawable.Orientation.TL_BR
+                else -> GradientDrawable.Orientation.LEFT_RIGHT
+            }
+        fun mix(base: Int, overlay: Int, fraction: Float): Int =
+            Color.rgb(
+                (Color.red(base) * (1f - fraction) + Color.red(overlay) * fraction).toInt(),
+                (Color.green(base) * (1f - fraction) + Color.green(overlay) * fraction).toInt(),
+                (Color.blue(base) * (1f - fraction) + Color.blue(overlay) * fraction).toInt(),
+            )
+        fun surface(focused: Boolean): GradientDrawable =
+            GradientDrawable(
+                    orientation,
+                    intArrayOf(
+                        mix(panel, color, if (focused) 0.24f else 0.14f),
+                        mix(panel, color, if (focused) 0.11f else 0.04f),
+                    ),
+                )
+                .apply {
+                    cornerRadius = dp(9).toFloat()
+                    setStroke(
+                        dp(if (focused) 2 else 1),
+                        if (focused) color else mix(panel, color, 0.27f),
+                    )
+                }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), surface(true))
+            addState(intArrayOf(android.R.attr.state_pressed), surface(true))
+            addState(intArrayOf(), surface(false))
+        }
+    }
+
     fun action(label: String, accent: Int = accent(), click: () -> Unit) =
         Button(context).apply {
             text = label
             textSize = 14f
+            typeface = bold
             setTextColor(Color.WHITE)
             isFocusable = true
             setPadding(dp(12), dp(7), dp(12), dp(7))
@@ -82,6 +126,8 @@ class TvWidgets(
             val color = providerAccent(provider)
             tag = "nav:$provider"
             isSelected = selected
+            textSize = 13f
+            setPadding(dp(9), dp(6), dp(9), dp(6))
             setTextColor(
                 ColorStateList(
                     arrayOf(intArrayOf(android.R.attr.state_selected), intArrayOf()),
@@ -158,6 +204,7 @@ class TvWidgets(
                 "iptv" -> R.color.accent_iptv
                 "spotify" -> R.color.accent_spotify
                 "airplay" -> R.color.accent_airplay
+                "rebrowser" -> R.color.accent_browser
                 else -> R.color.accent_zombie
             }
         )
@@ -193,4 +240,12 @@ class TvWidgets(
                 else -> R.string.unavailable
             }
         )
+
+    /** A listening mirror relay remains idle until a sender starts publishing. */
+    fun localizedServiceState(provider: String, state: String): String =
+        if (provider == "android_mirror" && state == "STARTING") {
+            context.getString(R.string.mirror_waiting_for_stream)
+        } else {
+            localizedState(state)
+        }
 }

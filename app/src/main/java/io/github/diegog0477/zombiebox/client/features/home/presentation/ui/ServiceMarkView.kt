@@ -6,15 +6,40 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import android.view.View
+import android.widget.ImageView
+import io.github.diegog0477.zombiebox.client.R
 
-/** Small, code-drawn service marks; safe on Android 2.3 without vector drawable support. */
-class ServiceMarkView(context: Context, private val service: String, private val accent: Int) :
-    View(context) {
+/** Provider artwork uses lossless official raster marks; local system symbols stay code-drawn. */
+class ServiceMarkView(context: Context, service: String, accent: Int) : ImageView(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var service = service
+    private var accent = accent
+
+    init {
+        scaleType = ScaleType.FIT_CENTER
+        bind(service, accent)
+    }
+
+    fun bind(service: String, accent: Int) {
+        this.service = service
+        this.accent = accent
+        val logo =
+            when (service) {
+                "youtube" -> R.drawable.service_youtube
+                "plex" -> R.drawable.service_plex
+                "jellyfin" -> R.drawable.service_jellyfin
+                "stremio" -> R.drawable.service_stremio
+                "spotify" -> R.drawable.service_spotify
+                "rebrowser" -> R.drawable.service_chromium
+                else -> 0
+            }
+        if (logo != 0) setImageResource(logo) else setImageDrawable(null)
+        invalidate()
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        if (drawable != null) return
         val size = minOf(width, height).toFloat()
         if (size <= 0f) return
         canvas.save()

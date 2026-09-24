@@ -3,9 +3,17 @@ package io.github.diegog0477.zombiebox.client.features.catalog.presentation.ui
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.text.TextUtils
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
 import android.widget.*
 import io.github.diegog0477.zombiebox.client.R
 import io.github.diegog0477.zombiebox.client.core.model.MediaItem
+import io.github.diegog0477.zombiebox.client.core.ui.TvDpadKeyboard
+import io.github.diegog0477.zombiebox.client.core.ui.TvTheme
+import io.github.diegog0477.zombiebox.client.core.ui.TvTypography
 import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
 import io.github.diegog0477.zombiebox.client.features.catalog.domain.model.CatalogBookmark
 import io.github.diegog0477.zombiebox.client.features.catalog.domain.model.CatalogLocation
@@ -16,6 +24,7 @@ import io.github.diegog0477.zombiebox.client.features.catalog.domain.model.Catal
 import io.github.diegog0477.zombiebox.client.features.catalog.domain.model.SearchBookmark
 import io.github.diegog0477.zombiebox.client.features.catalog.presentation.viewmodel.CatalogViewModel
 import io.github.diegog0477.zombiebox.client.features.catalog.presentation.viewmodel.SearchViewModel
+import java.util.Locale
 
 class CatalogDialogs(
     private val activity: Activity,
@@ -60,7 +69,9 @@ class CatalogDialogs(
 
     fun search(draft: String = searchModel.state.query.ifEmpty { query() }) {
         guide?.close()
-        overlay?.dismiss()
+        val previousOverlay = overlay
+        overlay = null
+        previousOverlay?.dismiss()
         browser?.dismiss()
         detail?.dismiss()
         detailItemId = ""
@@ -97,10 +108,12 @@ class CatalogDialogs(
     }
 
     private var browser: AlertDialog? = null
+    private var categoryDialog: AlertDialog? = null
     private var detail: AlertDialog? = null
     val visible: Boolean
         get() =
             browser?.isShowing == true ||
+                categoryDialog?.isShowing == true ||
                 youtubeAccount.visible ||
                 detail?.isShowing == true ||
                 overlay?.isShowing == true ||
@@ -224,10 +237,13 @@ class CatalogDialogs(
 
     fun close() {
         youtubeAccount.close()
+        categoryDialog?.dismiss()
+        categoryDialog = null
         model.rememberPlaybackReturn(null)
         searchOrigin = false
-        overlay?.dismiss()
+        val previousOverlay = overlay
         overlay = null
+        previousOverlay?.dismiss()
         guide?.close()
         guide = null
         captureViewport = null
@@ -249,45 +265,127 @@ class CatalogDialogs(
     }
 
     fun promptProviderSearch(provider: String) {
+        searchOrigin = false
+        showProviderSearch(provider, "", false)
+    }
+
+    private fun showProviderSearch(provider: String, draft: String, returnToCatalog: Boolean) {
+        val previousOverlay = overlay
+        overlay = null
+        previousOverlay?.dismiss()
+        browser?.dismiss()
+        val accent = ui.providerAccent(provider)
+        val heading = activity.getString(R.string.search_provider, ui.serviceTitle(provider))
         val input =
             EditText(activity).apply {
                 setSingleLine(true)
                 setTextColor(Color.WHITE)
                 setHintTextColor(ui.muted)
-                setBackgroundDrawable(ui.box(ui.panel, ui.muted))
+                setBackgroundDrawable(ui.focusBackground(accent))
                 setPadding(ui.dp(12), 0, ui.dp(12), 0)
                 filters = arrayOf(android.text.InputFilter.LengthFilter(100))
-                setHint(R.string.search_all_hint)
+                hint = heading
+                typeface = TvTypography.regular(activity)
+                setText(draft)
             }
-        AlertDialog.Builder(activity)
-            .setTitle(activity.getString(R.string.search_provider, ui.serviceTitle(provider)))
-            .setView(input)
-            .setPositiveButton(R.string.search) { _, _ ->
-                val phrase = input.text.toString().trim()
-                if (phrase.length >= 2) {
-                    searchOrigin = false
-                    load { model.open(provider, phrase, ::showPage, ::loadFailed) }
-                }
+        var dialogRef: AlertDialog? = null
+        var submitted = false
+        fun submit() {
+            val phrase = input.text.toString().trim()
+            if (phrase.length < 2) return
+            submitted = true
+            dialogRef?.dismiss()
+            load {
+                if (returnToCatalog) model.search(phrase, ::showPage, ::loadFailed)
+                else model.open(provider, phrase, ::showPage, ::loadFailed)
             }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        }
+        val keyboard =
+            TvDpadKeyboard(activity).apply {
+                attachTarget(input)
+                maxTextLength = 100
+                setOnDone { submit() }
+            }
+        val page =
+            ui.column().apply {
+                setBackgroundColor(TvTheme.shellBackground)
+                setPadding(ui.dp(28), ui.dp(22), ui.dp(28), ui.dp(22))
+                addView(
+                    ui.text(heading, 26f).apply {
+                        typeface = ui.bold
+                        setPadding(0, 0, 0, ui.dp(16))
+                    }
+                )
+                addView(input, LinearLayout.LayoutParams(-1, ui.dp(52)))
+                addView(ui.text(activity.getString(R.string.search_all_hint), 13f, ui.muted))
+                addView(keyboard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(14) })
+                addView(
+                    ui.row().apply {
+                        addView(ui.action(activity.getString(R.string.search), accent) { submit() })
+                        addView(ui.button(R.string.cancel) { dialogRef?.dismiss() })
+                    },
+                    LinearLayout.LayoutParams(-1, -2).apply { topMargin = ui.dp(16) },
+                )
+            }
+        val dialog = AlertDialog.Builder(activity).setView(page).create()
+        dialogRef = dialog
+        overlayCapture = { CatalogOverlay("provider_search", input.text.toString().take(100)) }
+        dialog.setOnDismissListener {
+            if (overlay === dialog) {
+                overlay = null
+                if (!submitted && returnToCatalog) model.screen?.let(::showPage)
+            }
+        }
+        overlay = dialog
+        dialog.show()
+        dialog.window?.let { window ->
+            window.setBackgroundDrawable(ColorDrawable(TvTheme.shellBackground))
+            window.setLayout(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+        }
+        page.post { if (dialog.isShowing) keyboard.focusDefaultKey() }
     }
 
     private fun load(work: () -> Unit) {
         browser?.dismiss()
+        val cancelAction = ui.button(R.string.cancel) { cancelLoad() }
+        val page =
+            ui.column().apply {
+                setBackgroundColor(ui.background)
+                gravity = Gravity.CENTER
+                setPadding(ui.dp(32), ui.dp(32), ui.dp(32), ui.dp(32))
+                addView(
+                    ui.text(activity.getString(R.string.loading), 26f).apply {
+                        typeface = ui.bold
+                        gravity = Gravity.CENTER
+                    }
+                )
+                addView(
+                    cancelAction,
+                    LinearLayout.LayoutParams(ui.dp(220), ui.dp(52)).apply { topMargin = ui.dp(24) },
+                )
+            }
         browser =
-            AlertDialog.Builder(activity)
-                .setMessage(R.string.loading)
-                .setNegativeButton(R.string.cancel) { _, _ -> cancelLoad() }
-                .create()
-                .also {
-                    it.setOnCancelListener { cancelLoad() }
-                    it.show()
+            AlertDialog.Builder(activity).setView(page).create().also { dialog ->
+                dialog.setOnCancelListener { cancelLoad() }
+                dialog.show()
+                dialog.window?.let { window ->
+                    window.setBackgroundDrawable(ColorDrawable(ui.background))
+                    window.setLayout(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
                 }
+                page.post { if (dialog.isShowing) cancelAction.requestFocus() }
+            }
         work()
     }
 
     private fun cancelLoad() {
+        browser?.dismiss()
+        browser = null
         model.cancelPending()
         returnToCatalogOrSearch()
     }
@@ -311,63 +409,173 @@ class CatalogDialogs(
     }
 
     private fun showPage(screen: CatalogScreen) {
+        categoryDialog?.dismiss()
+        categoryDialog = null
         detailItemId = ""
         detail?.dismiss()
         detail = null
         browser?.dismiss()
         val provider = screen.location.provider
-        val list = CatalogListView(activity, screen, ui.providerAccent(provider))
+        val accent = ui.providerAccent(provider)
+        val list = CatalogListView(activity, screen, accent, artwork)
         fun remember() {
             model.rememberViewport(list.viewport())
         }
         captureViewport = ::remember
+
         val content =
             ui.column().apply {
-                setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))
                 setBackgroundColor(ui.background)
-                addView(
-                    ui.text(
-                        activity.getString(R.string.catalog_scope, ui.serviceTitle(provider)),
-                        14f,
-                        ui.providerAccent(provider),
-                    )
-                )
-                if (provider == "iptv")
-                    addView(
-                        ui.button(R.string.guide) {
-                            remember()
-                            openGuide(model.screen ?: screen)
-                        }
-                    )
-                if (provider == "youtube" && screen.location.parent.isEmpty())
-                    addView(ui.button(R.string.youtube_account) { youtubeAccount.show() })
-                if (provider == "iptv" && !screen.location.favoritesOnly)
-                    addView(
-                        ui.button(R.string.iptv_favorites) {
-                            remember()
-                            load { model.openIptvFavorites(::showPage, ::loadFailed) }
-                        }
-                    )
-                if (provider == "iptv" && screen.page.categories.isNotEmpty())
-                    addView(
-                        ui.button(R.string.iptv_categories) {
-                            remember()
-                            chooseIptvCategory(screen)
-                        }
-                    )
-                if (screen.location.category.isNotEmpty())
-                    addView(ui.text(screen.location.category, 14f, ui.providerAccent(provider)))
-                if (screen.location.query.isNotEmpty())
-                    addView(ui.text(screen.location.query, 14f, ui.muted))
-                if (screen.page.items.isEmpty())
-                    addView(ui.text(activity.getString(R.string.catalog_empty), 16f, ui.muted))
-                else addView(list, LinearLayout.LayoutParams(-1, ui.dp(320)))
-                addView(
-                    ui.action(activity.getString(R.string.search), ui.providerAccent(provider)) {
-                        remember()
-                        searchPage(screen)
+                setPadding(ui.dp(24), ui.dp(16), ui.dp(24), ui.dp(16))
+
+                val header =
+                    ui.row().apply {
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(0, 0, 0, ui.dp(12))
+
+                        val titleCol =
+                            ui.column().apply {
+                                val tagRow =
+                                    ui.row().apply {
+                                        addView(
+                                            ui.text(
+                                                    ui.serviceTitle(provider).uppercase(Locale.US),
+                                                    12f,
+                                                    accent,
+                                                )
+                                                .apply { typeface = ui.bold }
+                                        )
+                                        if (screen.location.category.isNotEmpty()) {
+                                            addView(
+                                                ui.text(
+                                                    "·  " + screen.location.category,
+                                                    12f,
+                                                    ui.muted,
+                                                )
+                                            )
+                                        }
+                                        if (screen.location.query.isNotEmpty()) {
+                                            addView(
+                                                ui.text(
+                                                    "·  \"" + screen.location.query + "\"",
+                                                    12f,
+                                                    ui.muted,
+                                                )
+                                            )
+                                        }
+                                    }
+                                addView(tagRow)
+                                val titleText =
+                                    if (screen.location.favoritesOnly)
+                                        activity.getString(R.string.iptv_favorites)
+                                    else screen.page.title.ifEmpty { ui.serviceTitle(provider) }
+                                addView(
+                                    ui.text(titleText, 22f).apply {
+                                        typeface = ui.bold
+                                        setSingleLine(true)
+                                        ellipsize = TextUtils.TruncateAt.END
+                                        setPadding(0, ui.dp(2), 0, 0)
+                                    }
+                                )
+                            }
+                        addView(titleCol, LinearLayout.LayoutParams(0, -2, 1f))
+
+                        val actionsLine =
+                            ui.row().apply {
+                                if (provider == "iptv") {
+                                    addView(
+                                        ui.button(R.string.guide) {
+                                            remember()
+                                            openGuide(model.screen ?: screen)
+                                        }
+                                    )
+                                    if (!screen.location.favoritesOnly) {
+                                        addView(
+                                            ui.button(R.string.iptv_favorites) {
+                                                remember()
+                                                load {
+                                                    model.openIptvFavorites(
+                                                        ::showPage,
+                                                        ::loadFailed,
+                                                    )
+                                                }
+                                            }
+                                        )
+                                    }
+                                    if (screen.page.categories.isNotEmpty()) {
+                                        addView(
+                                            ui.button(R.string.iptv_categories) {
+                                                remember()
+                                                chooseIptvCategory(screen)
+                                            }
+                                        )
+                                    }
+                                }
+                                if (provider == "youtube" && screen.location.parent.isEmpty()) {
+                                    addView(
+                                        ui.button(R.string.youtube_account) {
+                                            youtubeAccount.show()
+                                        }
+                                    )
+                                }
+                                addView(
+                                    ui.action(activity.getString(R.string.search), accent) {
+                                        remember()
+                                        searchPage(screen)
+                                    }
+                                )
+                                if (model.canBack || searchOrigin) {
+                                    addView(ui.button(R.string.back) { back() })
+                                }
+                                if (screen.page.nextOffset >= 0) {
+                                    addView(
+                                        ui.primary(R.string.next_page) {
+                                            remember()
+                                            load { model.next(::showPage, ::loadFailed) }
+                                        }
+                                    )
+                                }
+                                addView(
+                                    ui.button(R.string.close) {
+                                        searchOrigin = false
+                                        model.dismiss()
+                                        browser?.dismiss()
+                                    }
+                                )
+                            }
+                        val actionsScroll =
+                            HorizontalScrollView(activity).apply {
+                                isHorizontalScrollBarEnabled = false
+                                addView(actionsLine)
+                            }
+                        addView(actionsScroll, LinearLayout.LayoutParams(-2, -2))
                     }
-                )
+                addView(header, LinearLayout.LayoutParams(-1, -2))
+
+                if (screen.page.items.isEmpty()) {
+                    val emptyBox =
+                        ui.column().apply {
+                            gravity = Gravity.CENTER
+                            setPadding(ui.dp(24), ui.dp(48), ui.dp(24), ui.dp(48))
+                            addView(
+                                ui.text(activity.getString(R.string.catalog_empty), 16f, ui.muted)
+                                    .apply { gravity = Gravity.CENTER }
+                            )
+                            addView(
+                                ui.action(activity.getString(R.string.search), accent) {
+                                        remember()
+                                        searchPage(screen)
+                                    }
+                                    .apply {
+                                        (layoutParams as? LinearLayout.LayoutParams)?.topMargin =
+                                            ui.dp(16)
+                                    }
+                            )
+                        }
+                    addView(emptyBox, LinearLayout.LayoutParams(-1, -1))
+                } else {
+                    addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
+                }
             }
         list.setOnItemClickListener { _, _, index, _ ->
             model.rememberViewport(list.viewport(index))
@@ -378,28 +586,22 @@ class CatalogDialogs(
                 showDetails(item) { model.screen?.let(::showPage) }
             }
         }
-        val builder =
-            AlertDialog.Builder(activity)
-                .setTitle(
-                    if (screen.location.favoritesOnly) activity.getString(R.string.iptv_favorites)
-                    else screen.page.title.ifEmpty { ui.serviceTitle(provider) }
-                )
-                .setView(content)
-                .setNegativeButton(R.string.close) { _, _ ->
-                    searchOrigin = false
-                    model.dismiss()
-                }
-        if (screen.page.nextOffset >= 0)
-            builder.setPositiveButton(R.string.next_page) { _, _ ->
-                remember()
-                load { model.next(::showPage, ::loadFailed) }
-            }
-        if (model.canBack || searchOrigin)
-            builder.setNeutralButton(R.string.back) { _, _ -> back() }
+        content.layoutParams =
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
         browser =
-            builder.create().also { dialog ->
+            AlertDialog.Builder(activity).setView(content).create().also { dialog ->
                 dialog.setOnCancelListener { back() }
                 dialog.show()
+                dialog.window?.let { window ->
+                    window.setBackgroundDrawable(ColorDrawable(ui.background))
+                    window.setLayout(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                }
                 list.restoreViewport()
             }
     }
@@ -408,13 +610,65 @@ class CatalogDialogs(
         val categories = listOf("") + screen.page.categories
         val labels =
             listOf(activity.getString(R.string.iptv_all_categories)) + screen.page.categories
-        AlertDialog.Builder(activity)
-            .setTitle(R.string.iptv_categories)
-            .setItems(labels.toTypedArray()) { _, index ->
-                load { model.openIptvCategory(categories[index], ::showPage, ::loadFailed) }
+        categoryDialog?.dismiss()
+        val actions = ui.column()
+        var initialFocus: View? = null
+        for (index in labels.indices) {
+            val button =
+                ui.action(labels[index], ui.providerAccent("iptv")) {
+                    categoryDialog?.dismiss()
+                    categoryDialog = null
+                    load { model.openIptvCategory(categories[index], ::showPage, ::loadFailed) }
+                }
+            button.maxLines = 2
+            actions.addView(
+                button,
+                LinearLayout.LayoutParams(-1, ui.dp(56)).apply { topMargin = ui.dp(6) },
+            )
+            if (categories[index] == screen.location.category) initialFocus = button
+        }
+        actions.addView(
+            ui.button(R.string.cancel) {
+                categoryDialog?.dismiss()
+                categoryDialog = null
+            },
+            LinearLayout.LayoutParams(-1, ui.dp(56)).apply { topMargin = ui.dp(18) },
+        )
+        val page =
+            ui.column().apply {
+                setBackgroundColor(ui.background)
+                setPadding(ui.dp(24), ui.dp(24), ui.dp(24), ui.dp(24))
+                addView(
+                    ui.text(activity.getString(R.string.iptv_categories), 28f).apply {
+                        typeface = ui.bold
+                        setPadding(0, 0, 0, ui.dp(16))
+                    }
+                )
+                addView(
+                    ScrollView(activity).apply { addView(actions) },
+                    LinearLayout.LayoutParams(-1, 0, 1f),
+                )
             }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
+        val frame =
+            FrameLayout(activity).apply {
+                setBackgroundColor(ui.background)
+                val width = minOf(activity.resources.displayMetrics.widthPixels, ui.dp(820))
+                addView(page, FrameLayout.LayoutParams(width, -1, Gravity.CENTER_HORIZONTAL))
+            }
+        categoryDialog =
+            AlertDialog.Builder(activity).setView(frame).create().also { dialog ->
+                dialog.setOnCancelListener { categoryDialog = null }
+                dialog.show()
+                dialog.window?.let { window ->
+                    window.setBackgroundDrawable(ColorDrawable(ui.background))
+                    window.setLayout(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                }
+                val focus = initialFocus
+                frame.post { if (dialog.isShowing) focus?.requestFocus() }
+            }
     }
 
     private fun openGuide(screen: CatalogScreen, saved: CatalogOverlay = CatalogOverlay()) {
@@ -460,36 +714,7 @@ class CatalogDialogs(
     }
 
     private fun searchPage(screen: CatalogScreen, draft: String = screen.location.query) {
-        overlay?.dismiss()
-        browser?.dismiss()
-        val input =
-            EditText(activity).apply {
-                setSingleLine(true)
-                setTextColor(Color.WHITE)
-                setHintTextColor(ui.muted)
-                setBackgroundDrawable(ui.box(ui.panel, ui.muted))
-                setPadding(ui.dp(12), 0, ui.dp(12), 0)
-                setText(draft)
-            }
-        overlayCapture = { CatalogOverlay("provider_search", input.text.toString()) }
-        overlay =
-            AlertDialog.Builder(activity)
-                .setTitle(
-                    activity.getString(
-                        R.string.catalog_scope,
-                        ui.serviceTitle(screen.location.provider),
-                    )
-                )
-                .setView(input)
-                .setPositiveButton(R.string.search) { _, _ ->
-                    load { model.search(input.text.toString(), ::showPage, ::loadFailed) }
-                }
-                .setNegativeButton(R.string.cancel) { _, _ -> model.screen?.let(::showPage) }
-                .create()
-                .also {
-                    it.setOnCancelListener { model.screen?.let(::showPage) }
-                    it.show()
-                }
+        showProviderSearch(screen.location.provider, draft, true)
     }
 
     fun details(item: MediaItem) {

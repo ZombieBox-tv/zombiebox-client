@@ -7,6 +7,47 @@
     <string name="search_provider">Search %1$s</string>
     <string name="devices">Devices</string>
     <string name="opens_on_demand">Opens on demand</string>
+    <string name="airplay_show_pin">Show AirPlay PIN</string>
+    <string name="airplay_pairing_title">Connect with AirPlay</string>
+    <string name="airplay_pairing_detail">
+        Enter this password on your Apple device. It is separate from the gateway operator code.
+    </string>
+    <string name="airplay_pairing_update">Update the gateway to show the AirPlay PIN here.</string>
+    <string name="airplay_pairing_disabled">
+        Enable the AirPlay service on the gateway first.
+    </string>
+    <string name="airplay_pairing_unavailable">
+        The AirPlay receiver is unavailable. Try again shortly.
+    </string>
+    <string name="airplay_intro">
+        Send audio or mirror your screen from an Apple device on the same network.
+    </string>
+    <string name="airplay_state_ready">
+        The gateway can contact the receiver. Choose Zombie Box on your Apple device to start.
+    </string>
+    <string name="airplay_state_disabled">
+        AirPlay is disabled on the gateway. Enable it in service settings.
+    </string>
+    <string name="airplay_state_unavailable">
+        The gateway cannot reach the AirPlay receiver. Check its service configuration.
+    </string>
+    <string name="airplay_state_loading">Checking the AirPlay receiver status…</string>
+    <string name="airplay_audio_options">Audio options</string>
+    <string name="airplay_configure">Configure AirPlay</string>
+    <string name="airplay_receive_title">Receive from your devices</string>
+    <string name="airplay_audio_title">AirPlay audio</string>
+    <string name="airplay_mirror_title">Screen mirroring</string>
+    <string name="airplay_audio_idle">
+        Select Zombie Box as the audio output on your Apple device.
+    </string>
+    <string name="airplay_mirror_idle">
+        Open Screen Mirroring on your Apple device and select Zombie Box.
+    </string>
+    <string name="airplay_waiting">Waiting for device</string>
+    <string name="airplay_audio_active">Audio is playing from your Apple device.</string>
+    <string name="airplay_mirror_active">Your Apple device is sharing its screen.</string>
+    <string name="airplay_open_player">Open player</string>
+    <string name="airplay_open_screen">Open screen</string>
     <string name="settings">Settings</string>
     <string name="play">Play</string>
     <string name="play_pause">Play / Pause</string>
@@ -15,6 +56,9 @@
     <string name="welcome">Same device. A bigger life.</string>
     <string name="welcome_detail">
         Connect your gateway and add a service or IPTV playlist to get started.
+    </string>
+    <string name="home_ready_detail">
+        Your gateway is connected. Choose a service above or explore Apps &amp; Content below.
     </string>
     <string name="configure_services">
         Services &amp; credentials
@@ -154,17 +198,42 @@
     <string name="youtube_receiver">YouTube receiver</string>
     <string name="authorization_required">Sign-in required</string>
     <string name="configured">Configured</string>
+    <string name="browse_library">Browse library</string>
+    <string name="provider_empty_catalog">
+        No titles here yet. Browse the library or search this service.
+    </string>
+    <string name="provider_service_disabled">
+        This service is off. Open services to set it up or enable it.
+    </string>
+    <string name="provider_service_unavailable">
+        This service is unavailable right now. Check its status on the gateway.
+    </string>
+    <string name="mirror_waiting_for_stream">Waiting for stream</string>
     <string name="implementation_pending">Implementation pending</string>
-    <string name="browser_address">Website address (https://…)</string>
+    <string name="browser_address">Search Google or enter a website</string>
     <string name="browser_open">Open</string>
     <string name="browser_detail">
-        Use Next link and Open link, or focus Page for arrow keys. Back closes the browser.
+        On Page, Up/Down scrolls, Left/Right selects links and OK opens one. Back returns to browser
+        controls.
     </string>
     <string name="browser_page">Page</string>
     <string name="browser_back">Previous page</string>
+    <string name="browser_forward">Next page</string>
+    <string name="browser_reload">Reload page</string>
+    <string name="browser_back_symbol">←</string>
+    <string name="browser_forward_symbol">→</string>
+    <string name="browser_reload_symbol">↻</string>
     <string name="browser_previous_link">Previous link</string>
     <string name="browser_next_link">Next link</string>
     <string name="browser_activate">Open link</string>
+    <string name="browser_scroll_up">Scroll up</string>
+    <string name="browser_scroll_down">Scroll down</string>
+    <string name="browser_page_mode">
+        PAGE MODE · ↑↓ scroll · ←→ links · OK open · Back exits
+    </string>
+    <string name="browser_pointer_control">Pointer mode</string>
+    <string name="browser_links_mode">Link mode</string>
+    <string name="browser_pointer_mode">POINTER MODE · arrows move · OK clicks · Back exits</string>
     <string name="browser_text">Text for the focused field</string>
     <string name="browser_type">Type</string>
     <string name="run_probes">Run media probes</string>
@@ -186,6 +255,12 @@
         continues in the background. Use Disable or the notification Stop action to end it.
     </string>
     <string name="youtube_tv_code">YouTube TV code: %1$s</string>
+    <string name="youtube_receiver_playback_unavailable">
+        Could not play this YouTube video. Try another video or check the gateway.
+    </string>
+    <string name="youtube_receiver_playback_unsupported">
+        This video requires an external player and cannot play here.
+    </string>
     <string name="rescan_hardware">Rescan hardware</string>
     <string name="diagnostics_report">API %1$d · %2$s %3$s · %4$s</string>
     <string name="hardware_report">
@@ -203,6 +278,7 @@
     <string name="back">Back</string>
     <string name="catalog_scope">Search scope: %1$s</string>
     <string name="catalog_empty">No items found. Try another search or go back.</string>
+    <string name="youtube_empty_home">No videos to show yet. Search YouTube to get started.</string>
     <string name="catalog_folder">Open collection</string>
     <string name="media_receiver">Receive Spotify / AirPlay</string>
     <string name="playback_failed">Playback interrupted</string>
@@ -364,8 +440,10 @@
     <string name="guide_previous_channels">Previous channels</string>
     <string name="guide_next_channels">More channels</string>
     <string name="guide_page_failed">Unable to load channels. Try the page button again.</string>
+    <string name="guide_minutes_left">%1$d min left</string>
+    <string name="guide_starts_in_minutes">In %1$d min</string>
     <string name="browser_controls_hint">
-        While controlling the page, press Back to return to browser controls. Close returns to Home.
+        D-pad: Up/Down scroll, Left/Right select links, OK open. Back returns to controls.
     </string>
     <string name="youtube_account">YouTube account</string>
     <string name="youtube_account_unconfigured">
@@ -384,4 +462,71 @@
     <string name="youtube_subscriptions">Subscriptions</string>
     <string name="youtube_playlists">Playlists</string>
     <string name="youtube_disconnect">Disconnect account</string>
+    <string name="browser_unavailable_title">Page unavailable</string>
+    <string name="browser_unavailable_detail">
+        Unable to load or display the page. Check the web address or verify that the gateway
+        Rebrowser service is running.
+    </string>
+    <string name="browser_loading_detail">Loading page from gateway…</string>
+    <string name="browser_idle_detail">
+        Search Google or enter a website above. Select Open, then use the D-pad to scroll and choose
+        links.
+    </string>
+    <string name="keyboard_space">Space</string>
+    <string name="keyboard_backspace">Delete</string>
+    <string name="keyboard_clear">Clear</string>
+    <string name="keyboard_done">Done</string>
+    <string name="keyboard_mode_lower">abc</string>
+    <string name="keyboard_mode_upper">ABC</string>
+    <string name="keyboard_mode_symbols">"?123"</string>
+    <string name="settings_categories">Categories</string>
+    <string name="settings_devices_remotes">Devices and remotes</string>
+    <string name="settings_connected_address">Connected · %1$s</string>
+    <string name="settings_not_paired">Not paired · Connect to gateway</string>
+    <string name="settings_not_configured">Not configured</string>
+    <string name="settings_current_value">Current: %1$s</string>
+    <string name="settings_diagnostics_summary">Hardware, network and playback probes</string>
+    <string name="settings_advanced_summary">Playback, audio, display and HDMI</string>
+    <string name="settings_languages_summary">Preferred audio and subtitle languages</string>
+    <string name="settings_services_summary">Gateway process status</string>
+    <string name="settings_resume_summary">Continue the last media session</string>
+    <string name="settings_gateway_detail">
+        Connect to your local gateway for catalogs, playback and receiver services.
+    </string>
+    <string name="settings_providers_detail">
+        Configure media servers, accounts and IPTV playlists on the gateway.
+    </string>
+    <string name="settings_diagnostics_detail">
+        Inspect device capabilities, network and media probes, and export a diagnostic report.
+    </string>
+    <string name="settings_language_detail">Choose the language used by the Client.</string>
+    <string name="settings_mode_detail">Choose the layout for TV, docked or handheld use.</string>
+    <string name="settings_advanced_detail">
+        Adjust playback backends, audio focus, display output and discovery.
+    </string>
+    <string name="settings_languages_detail">
+        Choose audio and subtitle language priorities for playback.
+    </string>
+    <string name="settings_services_detail">
+        View the state of gateway services and processes.
+    </string>
+    <string name="settings_resume_detail">Resume the last active media session.</string>
+    <string name="settings_audio_focus_summary">Audio focus and interruptions</string>
+    <string name="settings_hdmi_summary">CEC volume and TV power</string>
+    <string name="settings_dial_summary">Local DIAL discovery</string>
+    <string name="devices_companion_summary">Zombie Cast remote and text input</string>
+    <string name="devices_youtube_summary">YouTube Cast receiver</string>
+    <string name="devices_media_summary">Spotify Connect and AirPlay audio</string>
+    <string name="devices_mirror_summary">Wireless screen mirroring receiver</string>
+    <string name="devices_gateway_detail">
+        Pair this Client with the local gateway to access media and receivers.
+    </string>
+    <string name="devices_companion_detail">
+        Pair a phone for D-pad navigation, playback control and remote typing.
+    </string>
+    <string name="devices_youtube_detail">Receive YouTube videos sent from another device.</string>
+    <string name="devices_media_detail">Manage audio reception from Spotify and AirPlay.</string>
+    <string name="devices_mirror_detail">
+        Receive a screen-sharing session from a mobile device or computer.
+    </string>
 </resources>

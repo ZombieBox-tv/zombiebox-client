@@ -7,6 +7,55 @@
     <string name="search_provider">Buscar en %1$s</string>
     <string name="devices">Dispositivos</string>
     <string name="opens_on_demand">Se abre cuando lo usas</string>
+    <string name="airplay_show_pin">Ver PIN de AirPlay</string>
+    <string name="airplay_pairing_title">Conectar con AirPlay</string>
+    <string name="airplay_pairing_detail">
+        Escribe esta contraseña en tu dispositivo Apple. Es distinta del código de operador del
+        gateway.
+    </string>
+    <string name="airplay_pairing_update">
+        Actualiza el gateway para mostrar aquí el PIN de AirPlay.
+    </string>
+    <string name="airplay_pairing_disabled">
+        Primero activa el servicio AirPlay en el gateway.
+    </string>
+    <string name="airplay_pairing_unavailable">
+        El receptor AirPlay no está disponible. Inténtalo de nuevo.
+    </string>
+    <string name="airplay_intro">
+        Envía audio o comparte la pantalla desde un dispositivo Apple en la misma red.
+    </string>
+    <string name="airplay_state_ready">
+        El gateway puede contactar al receptor. Elige Zombie Box en tu dispositivo Apple para
+        comenzar.
+    </string>
+    <string name="airplay_state_disabled">
+        AirPlay está desactivado en el gateway. Actívalo en los ajustes del servicio.
+    </string>
+    <string name="airplay_state_unavailable">
+        El gateway no puede contactar al receptor AirPlay. Revisa la configuración del servicio.
+    </string>
+    <string name="airplay_state_loading">Comprobando el estado del receptor AirPlay…</string>
+    <string name="airplay_audio_options">Opciones de audio</string>
+    <string name="airplay_configure">Configurar AirPlay</string>
+    <string name="airplay_receive_title">Recibir desde tus dispositivos</string>
+    <string name="airplay_audio_title">Audio AirPlay</string>
+    <string name="airplay_mirror_title">Compartir pantalla</string>
+    <string name="airplay_audio_idle">
+        Selecciona Zombie Box como salida de audio en tu dispositivo Apple.
+    </string>
+    <string name="airplay_mirror_idle">
+        Abre Compartir pantalla en tu dispositivo Apple y selecciona Zombie Box.
+    </string>
+    <string name="airplay_waiting">Esperando dispositivo</string>
+    <string name="airplay_audio_active">
+        Se está reproduciendo audio desde tu dispositivo Apple.
+    </string>
+    <string name="airplay_mirror_active">
+        Tu dispositivo Apple está compartiendo su pantalla.
+    </string>
+    <string name="airplay_open_player">Abrir reproductor</string>
+    <string name="airplay_open_screen">Abrir pantalla</string>
     <string name="settings">Configuración</string>
     <string name="play">Reproducir</string>
     <string name="play_pause">Reproducir / Pausar</string>
@@ -15,6 +64,9 @@
     <string name="welcome">El mismo dispositivo. Más posibilidades.</string>
     <string name="welcome_detail">
         Conecta tu gateway y agrega un servicio o una lista IPTV para empezar.
+    </string>
+    <string name="home_ready_detail">
+        Tu gateway está conectado. Elige un servicio arriba o explora Apps y contenido abajo.
     </string>
     <string name="configure_services">Servicios y credenciales</string>
     <string name="continue_watching">Seguir viendo</string>
@@ -158,18 +210,44 @@
     <string name="youtube_receiver">Receptor de YouTube</string>
     <string name="authorization_required">Inicia sesión</string>
     <string name="configured">Configurado</string>
+    <string name="browse_library">Explorar biblioteca</string>
+    <string name="provider_empty_catalog">
+        Todavía no hay títulos aquí. Explora la biblioteca o busca en este servicio.
+    </string>
+    <string name="provider_service_disabled">
+        Este servicio está apagado. Abre Servicios para configurarlo o activarlo.
+    </string>
+    <string name="provider_service_unavailable">
+        Este servicio no está disponible ahora. Revisa su estado en el gateway.
+    </string>
+    <string name="mirror_waiting_for_stream">Esperando transmisión</string>
     <string name="implementation_pending">Implementación pendiente</string>
-    <string name="browser_address">Dirección web (https://…)</string>
+    <string name="browser_address">Busca en Google o escribe una dirección</string>
     <string name="browser_open">Abrir</string>
     <string name="browser_detail">
-        Usa Siguiente enlace y Abrir enlace, o enfoca Página para las flechas. Atrás cierra el
-        navegador.
+        En Página, Arriba/Abajo desplaza, Izquierda/Derecha selecciona enlaces y OK abre uno. Atrás
+        vuelve a los controles.
     </string>
     <string name="browser_page">Página</string>
     <string name="browser_back">Página anterior</string>
+    <string name="browser_forward">Página siguiente</string>
+    <string name="browser_reload">Recargar página</string>
+    <string name="browser_back_symbol">←</string>
+    <string name="browser_forward_symbol">→</string>
+    <string name="browser_reload_symbol">↻</string>
     <string name="browser_previous_link">Enlace anterior</string>
     <string name="browser_next_link">Siguiente enlace</string>
     <string name="browser_activate">Abrir enlace</string>
+    <string name="browser_scroll_up">Subir página</string>
+    <string name="browser_scroll_down">Bajar página</string>
+    <string name="browser_page_mode">
+        MODO PÁGINA · ↑↓ desplazar · ←→ enlaces · OK abrir · Atrás salir
+    </string>
+    <string name="browser_pointer_control">Modo puntero</string>
+    <string name="browser_links_mode">Modo enlaces</string>
+    <string name="browser_pointer_mode">
+        MODO PUNTERO · flechas mueven · OK pulsa · Atrás sale
+    </string>
     <string name="browser_text">Texto para el campo seleccionado</string>
     <string name="browser_type">Escribir</string>
     <string name="run_probes">Ejecutar pruebas multimedia</string>
@@ -190,6 +268,12 @@
         plano. Usa Desactivar o Detener en la notificación para finalizarla.
     </string>
     <string name="youtube_tv_code">Código de TV de YouTube: %1$s</string>
+    <string name="youtube_receiver_playback_unavailable">
+        No se pudo reproducir este video de YouTube. Prueba otro video o revisa el gateway.
+    </string>
+    <string name="youtube_receiver_playback_unsupported">
+        Este video necesita un reproductor externo y no se puede reproducir aquí.
+    </string>
     <string name="rescan_hardware">Volver a escanear hardware</string>
     <string name="diagnostics_report">API %1$d · %2$s %3$s · %4$s</string>
     <string name="hardware_report">
@@ -210,6 +294,9 @@
     <string name="back">Atrás</string>
     <string name="catalog_scope">Buscar en: %1$s</string>
     <string name="catalog_empty">No hay elementos. Prueba otra búsqueda o vuelve atrás.</string>
+    <string name="youtube_empty_home">
+        Aún no hay videos para mostrar. Busca en YouTube para empezar.
+    </string>
     <string name="catalog_folder">Abrir colección</string>
     <string name="media_receiver">Recibir Spotify / AirPlay</string>
     <string name="playback_failed">Reproducción interrumpida</string>
@@ -393,8 +480,11 @@
     <string name="guide_page_failed">
         No se pudieron cargar los canales. Intenta de nuevo con el botón de página.
     </string>
+    <string name="guide_minutes_left">Quedan %1$d min</string>
+    <string name="guide_starts_in_minutes">En %1$d min</string>
     <string name="browser_controls_hint">
-        Al controlar la página, pulsa Atrás para volver a los controles. Cerrar vuelve al inicio.
+        D-pad: Arriba/Abajo desplaza, Izquierda/Derecha selecciona enlaces y OK abre. Atrás vuelve a
+        los controles.
     </string>
     <string name="youtube_account">Cuenta de YouTube</string>
     <string name="youtube_account_unconfigured">
@@ -413,4 +503,77 @@
     <string name="youtube_subscriptions">Suscripciones</string>
     <string name="youtube_playlists">Listas de reproducción</string>
     <string name="youtube_disconnect">Desconectar cuenta</string>
+    <string name="browser_unavailable_title">Página no disponible</string>
+    <string name="browser_unavailable_detail">
+        No se pudo cargar o mostrar la página. Verifica la dirección web o que el servicio Rebrowser
+        esté activo en el gateway.
+    </string>
+    <string name="browser_loading_detail">Cargando página desde el gateway…</string>
+    <string name="browser_idle_detail">
+        Busca en Google o escribe una dirección arriba. Selecciona Abrir y usa el D-pad para
+        desplazarte y elegir enlaces.
+    </string>
+    <string name="keyboard_space">Espacio</string>
+    <string name="keyboard_backspace">Borrar</string>
+    <string name="keyboard_clear">Limpiar</string>
+    <string name="keyboard_done">Listo</string>
+    <string name="keyboard_mode_lower">abc</string>
+    <string name="keyboard_mode_upper">ABC</string>
+    <string name="keyboard_mode_symbols">"?123"</string>
+    <string name="settings_categories">Categorías</string>
+    <string name="settings_devices_remotes">Dispositivos y controles</string>
+    <string name="settings_connected_address">Conectado · %1$s</string>
+    <string name="settings_not_paired">Sin emparejar · Conecta el gateway</string>
+    <string name="settings_not_configured">Sin configurar</string>
+    <string name="settings_current_value">Actual: %1$s</string>
+    <string name="settings_diagnostics_summary">Pruebas de hardware, red y reproducción</string>
+    <string name="settings_advanced_summary">Reproducción, audio, pantalla y HDMI</string>
+    <string name="settings_languages_summary">Idiomas preferidos de audio y subtítulos</string>
+    <string name="settings_services_summary">Estado de procesos del gateway</string>
+    <string name="settings_resume_summary">Continúa la última sesión multimedia</string>
+    <string name="settings_gateway_detail">
+        Conecta tu gateway local para acceder a catálogos, reproducción y receptores.
+    </string>
+    <string name="settings_providers_detail">
+        Configura servidores multimedia, cuentas y listas IPTV en el gateway.
+    </string>
+    <string name="settings_diagnostics_detail">
+        Consulta capacidades, red y pruebas multimedia, o exporta un informe.
+    </string>
+    <string name="settings_language_detail">Elige el idioma de la aplicación.</string>
+    <string name="settings_mode_detail">
+        Elige la presentación para TV, modo acoplado o portátil.
+    </string>
+    <string name="settings_advanced_detail">
+        Ajusta reproducción, enfoque de audio, salida de video y descubrimiento.
+    </string>
+    <string name="settings_languages_detail">
+        Elige las prioridades de idiomas de audio y subtítulos.
+    </string>
+    <string name="settings_services_detail">
+        Consulta el estado de los servicios y procesos del gateway.
+    </string>
+    <string name="settings_resume_detail">Reanuda la última sesión multimedia activa.</string>
+    <string name="settings_audio_focus_summary">Enfoque de audio e interrupciones</string>
+    <string name="settings_hdmi_summary">Volumen CEC y encendido de TV</string>
+    <string name="settings_dial_summary">Descubrimiento DIAL local</string>
+    <string name="devices_companion_summary">Control y escritura desde Zombie Cast</string>
+    <string name="devices_youtube_summary">Receptor de YouTube Cast</string>
+    <string name="devices_media_summary">Audio de Spotify Connect y AirPlay</string>
+    <string name="devices_mirror_summary">Receptor de pantalla inalámbrica</string>
+    <string name="devices_gateway_detail">
+        Empareja el Client con el gateway local para acceder a contenido y receptores.
+    </string>
+    <string name="devices_companion_detail">
+        Empareja un teléfono para navegar con D-pad, controlar la reproducción y escribir.
+    </string>
+    <string name="devices_youtube_detail">
+        Recibe videos de YouTube enviados desde otro dispositivo.
+    </string>
+    <string name="devices_media_detail">
+        Administra la recepción de audio de Spotify y AirPlay.
+    </string>
+    <string name="devices_mirror_detail">
+        Recibe la pantalla compartida de un móvil o computadora.
+    </string>
 </resources>

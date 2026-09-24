@@ -15,3 +15,6 @@ each distribution; an inventory alone is not a license-compliance determination.
 DIAL protocol specification: Copyright © 2021 Netflix, Inc. All rights reserved.
 See the full notice in app/src/main/assets/legal/dial/LICENSE.
 No DIAL/Netflix certification or endorsement is claimed.
+
+Bundled service identification marks and Barlow font have separate terms.
+See legal/service-marks/NOTICE, legal/chromium/LICENSE and legal/barlow/OFL.txt.

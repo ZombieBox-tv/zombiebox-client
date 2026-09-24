@@ -3,9 +3,10 @@ package io.github.diegog0477.zombiebox.client.features.home.presentation.ui
 import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Color
-import android.graphics.Typeface
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import io.github.diegog0477.zombiebox.client.R
@@ -29,10 +30,17 @@ data class HomeActions(
     val searchProvider: (String) -> Unit,
     val devices: () -> Unit,
     val youtubeReceiver: () -> Unit,
+    val airplayPairing: () -> Unit,
+    val airplayAudioOptions: () -> Unit,
+    val airplayConfigure: () -> Unit,
     val catalog: (String) -> Unit,
     val mirrorReceiver: () -> Unit,
     val providers: () -> Unit,
     val pair: () -> Unit,
+    val playPause: () -> Unit = {},
+    val next: () -> Unit = {},
+    val previous: () -> Unit = {},
+    val expand: () -> Unit = {},
 )
 
 /** Home composition and D-pad focus. Receives semantic content and user-action callbacks. */
@@ -54,6 +62,98 @@ class HomeView(
     private val heapMb =
         (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager).memoryClass
     private val physicalMb = HardwareMemory.physicalMb()
+
+    private var nowPlayingRail: NowPlayingRailView? = null
+    private var compactTransport: CompactTransportBar? = null
+    private var rightRailContainer: FrameLayout? = null
+    private var rememberedMainFocus: String? = null
+    private var currentPlayback: HomePlaybackSession = HomePlaybackSession()
+    private var isDockedLandscape: Boolean = false
+
+    fun isRightRailActive(): Boolean =
+        isDockedLandscape && currentPlayback.active && nowPlayingRail != null
+
+    fun isRightRailFocused(): Boolean = nowPlayingRail?.hasFocusWithin() == true
+
+    fun focusRightRail(): Boolean {
+        if (!isRightRailActive()) return false
+        rememberedMainFocus = focus.selectedKey
+        val target = nowPlayingRail?.primaryControl() ?: return false
+        target.requestFocus()
+        return true
+    }
+
+    fun restoreMainContentFocus(): Boolean {
+        val key = rememberedMainFocus
+        rememberedMainFocus = null
+        if (key != null) {
+            focus.remember(key)
+        }
+        focus.restore()
+        return true
+    }
+
+    fun moveRightRailFocus(keyCode: Int, current: View?): View? =
+        nowPlayingRail?.moveFocus(keyCode, current)
+
+    fun setPlaybackSession(playback: HomePlaybackSession) {
+        currentPlayback = playback
+        if (isDockedLandscape) {
+            rightRailContainer?.let { container ->
+                if (playback.active && nowPlayingRail != null) {
+                    nowPlayingRail?.update(playback)
+                    return@let
+                }
+                if (!playback.active && nowPlayingRail == null) return@let
+                val railHadFocus = nowPlayingRail?.hasFocusWithin() == true
+                container.removeAllViews()
+                if (playback.active) {
+                    val rail =
+                        NowPlayingRailView(
+                            context,
+                            ui,
+                            artwork,
+                            decoder,
+                            TransportActions(
+                                actions.playPause,
+                                actions.next,
+                                actions.previous,
+                                actions.expand,
+                            ),
+                        )
+                    rail.update(playback)
+                    container.addView(rail, FrameLayout.LayoutParams(-1, -2))
+                    nowPlayingRail = rail
+                } else {
+                    nowPlayingRail = null
+                    container.addView(
+                        HomeStatusPanel(context, ui),
+                        FrameLayout.LayoutParams(-1, -2),
+                    )
+                    if (railHadFocus) post { restoreMainContentFocus() }
+                }
+            }
+        } else {
+            compactTransport?.let { transport ->
+                if (playback.active) {
+                    transport.visibility = VISIBLE
+                    transport.update(playback)
+                } else {
+                    transport.visibility = GONE
+                }
+            }
+        }
+    }
+
+    fun videoDockRect(relativeTo: View): Rect? =
+        if (isRightRailActive()) nowPlayingRail?.videoDockRect(relativeTo) else null
+
+    fun updatePlaybackProgress(status: String, positionMs: Int, durationMs: Int) {
+        currentPlayback =
+            currentPlayback.copy(state = status, positionMs = positionMs, durationMs = durationMs)
+        nowPlayingRail?.updateProgress(status, positionMs, durationMs)
+        compactTransport?.updateProgress(status, positionMs, durationMs)
+    }
 
     fun status(loading: Boolean, failed: Boolean) {
         heroStatus?.apply {
@@ -95,20 +195,37 @@ class HomeView(
         tv: Boolean,
         bottom: ViewGroup,
         full: Boolean,
+    ) = render(snapshot, scope, tv, full, currentPlayback)
+
+    fun render(
+        snapshot: HomeSnapshot,
+        scope: HomeScope,
+        tv: Boolean,
+        full: Boolean = false,
+        playback: HomePlaybackSession = currentPlayback,
     ) {
         this.scope = scope
+        this.currentPlayback = playback
         focusRows.clear()
-        content = this
+        navigation.clear()
+        nowPlayingRail = null
+        compactTransport = null
+        rightRailContainer = null
         removeAllViews()
+
         val widthDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
+        isDockedLandscape = tv && widthDp >= 900f
+
+        // Top Navigation Header
         val header = ui.row()
         val navigationFrame = ui.column()
         header.addView(navigationFrame, LinearLayout.LayoutParams(0, -2, 1f))
         if (widthDp >= 900f) header.addView(HomeClock(context, ui))
-        content.addView(header, LinearLayout.LayoutParams(-1, -2))
+        addView(header, LinearLayout.LayoutParams(-1, -2))
+
         val nav = horizontal(navigationFrame, "navigation")
         nav.addView(
-            ui.text(context.getString(R.string.brand), 25f).apply {
+            ui.text(context.getString(R.string.brand), 21f).apply {
                 val label = android.text.SpannableString(text)
                 val suffix = label.toString().lastIndexOf("tv")
                 if (suffix >= 0)
@@ -119,11 +236,10 @@ class HomeView(
                         0,
                     )
                 text = label
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 0, ui.dp(24), 0)
+                typeface = ui.bold
+                setPadding(0, 0, ui.dp(16), 0)
             }
         )
-        navigation.clear()
         val home =
             ui.navigation(context.getString(R.string.home), "", scope.provider.isEmpty()) {
                 actions.navigate("", "")
@@ -138,9 +254,175 @@ class HomeView(
             navigation[id] = tab
             nav.addView(tab)
         }
-        nav.addView(ui.action(context.getString(R.string.devices), ui.green, actions.devices))
+        nav.addView(
+            ui.action(context.getString(R.string.devices), ui.green, actions.devices).apply {
+                textSize = 13f
+                setPadding(ui.dp(9), ui.dp(6), ui.dp(9), ui.dp(6))
+            }
+        )
         nav.addView(headerAction(R.string.search, false, actions.search))
         nav.addView(headerAction(R.string.settings, true, actions.settings))
+
+        // Main content column
+        val mainColumn = ui.column()
+
+        if (isDockedLandscape) {
+            val body = ui.row().apply { gravity = Gravity.TOP }
+            val scroll = ScrollView(context).apply { isVerticalScrollBarEnabled = false }
+            scroll.addView(mainColumn, FrameLayout.LayoutParams(-1, -2))
+            body.addView(scroll, LinearLayout.LayoutParams(0, -1, 1f))
+
+            val railFrame = FrameLayout(context)
+            rightRailContainer = railFrame
+            if (playback.active) {
+                val rail =
+                    NowPlayingRailView(
+                        context,
+                        ui,
+                        artwork,
+                        decoder,
+                        TransportActions(
+                            actions.playPause,
+                            actions.next,
+                            actions.previous,
+                            actions.expand,
+                        ),
+                    )
+                rail.update(playback)
+                railFrame.addView(rail, FrameLayout.LayoutParams(-1, -2))
+                nowPlayingRail = rail
+            } else {
+                railFrame.addView(HomeStatusPanel(context, ui), FrameLayout.LayoutParams(-1, -2))
+            }
+            body.addView(
+                railFrame,
+                LinearLayout.LayoutParams(ui.dp(260), -2).apply {
+                    leftMargin = ui.dp(18)
+                    topMargin = ui.dp(14)
+                },
+            )
+            addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
+        } else {
+            val scroll = ScrollView(context).apply { isVerticalScrollBarEnabled = false }
+            scroll.addView(mainColumn, FrameLayout.LayoutParams(-1, -2))
+            addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
+            val transport =
+                CompactTransportBar(
+                    context,
+                    ui,
+                    artwork,
+                    decoder,
+                    TransportActions(
+                        actions.playPause,
+                        actions.next,
+                        actions.previous,
+                        actions.expand,
+                    ),
+                )
+            compactTransport = transport
+            if (playback.active) {
+                transport.visibility = VISIBLE
+                transport.update(playback)
+            } else {
+                transport.visibility = GONE
+            }
+            addView(transport, LinearLayout.LayoutParams(-1, -2))
+        }
+
+        content = mainColumn
+
+        val statusView = ui.text("", 12f, ui.muted).apply { visibility = GONE }
+        heroStatus = statusView
+        content.addView(statusView)
+
+        when (scope.provider) {
+            "youtube" -> {
+                YouTubePageView(context, ui, artwork, decoder, actions)
+                    .render(
+                        parent = mainColumn,
+                        snapshot = snapshot,
+                        isDockedLandscape = isDockedLandscape,
+                        widthDp = widthDp,
+                        focusRows = focusRows,
+                    )
+            }
+            "plex",
+            "stremio",
+            "jellyfin" -> {
+                ProviderPosterPageView(
+                        context = context,
+                        ui = ui,
+                        artwork = artwork,
+                        decoder = decoder,
+                        actions = actions,
+                        provider = scope.provider,
+                    )
+                    .render(
+                        parent = mainColumn,
+                        snapshot = snapshot,
+                        isDockedLandscape = isDockedLandscape,
+                        widthDp = widthDp,
+                        heapMb = heapMb,
+                        physicalMb = physicalMb,
+                        tv = tv,
+                        focusRows = focusRows,
+                    )
+            }
+            "airplay" -> {
+                AirPlayPageView(context, ui, actions).render(mainColumn, snapshot, focusRows)
+            }
+            "spotify",
+            "iptv" -> {
+                renderProviderScope(
+                    parent = mainColumn,
+                    snapshot = snapshot,
+                    provider = scope.provider,
+                    tv = tv,
+                )
+            }
+            else -> {
+                renderHomeScope(parent = mainColumn, snapshot = snapshot, tv = tv)
+            }
+        }
+
+        content.addView(
+            ui.text(
+                context.getString(
+                    if (tv) R.string.docked_description else R.string.handheld_description
+                ),
+                14f,
+                ui.muted,
+            )
+        )
+
+        val transportGroup: List<Pair<String, ViewGroup>> =
+            if (!isDockedLandscape && playback.active && compactTransport != null) {
+                listOf(Pair("transport", compactTransport!!.controlsContainer()))
+            } else emptyList()
+
+        focus.rebuild(focusRows + transportGroup, !full)
+    }
+
+    private fun headerAction(label: Int, settings: Boolean, click: () -> Unit): ImageButton =
+        ImageButton(context).apply {
+            contentDescription = context.getString(label)
+            tag = "button:$label"
+            setImageDrawable(HeaderIcon(settings, Color.WHITE))
+            setPadding(ui.dp(13), ui.dp(13), ui.dp(13), ui.dp(13))
+            setBackgroundDrawable(
+                android.graphics.drawable.StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused), ui.box(ui.panel, ui.green))
+                    addState(intArrayOf(android.R.attr.state_pressed), ui.box(ui.panel, ui.green))
+                    addState(intArrayOf(), ui.box(Color.TRANSPARENT))
+                }
+            )
+            isFocusable = true
+            setOnClickListener { click() }
+            layoutParams = LinearLayout.LayoutParams(ui.dp(48), ui.dp(48))
+        }
+
+    private fun renderHomeScope(parent: LinearLayout, snapshot: HomeSnapshot, tv: Boolean) {
         val heroFrame = FrameLayout(context).apply { minimumHeight = ui.dp(240) }
         val hero = ui.column()
         hero.setPadding(ui.dp(24), ui.dp(18), ui.dp(24), ui.dp(18))
@@ -152,6 +434,10 @@ class HomeView(
                 .apply { cornerRadius = ui.dp(10).toFloat() }
         )
         val featured = snapshot.hero
+        val hasReadyService =
+            snapshot.modules.any {
+                it.id != "local" && it.state in listOf("READY", "HEALTHY", "STARTING")
+            }
         if (featured != null && featured.imageUrl.isNotEmpty()) {
             heroFrame.addView(artImage(featured.imageUrl, true), FrameLayout.LayoutParams(-1, -1))
             hero.setBackgroundDrawable(
@@ -167,7 +453,7 @@ class HomeView(
         )
         hero.addView(
             ui.text(featured?.title ?: context.getString(R.string.welcome), 32f).apply {
-                typeface = Typeface.DEFAULT_BOLD
+                typeface = ui.bold
                 maxLines = 2
             }
         )
@@ -186,7 +472,10 @@ class HomeView(
         hero.addView(
             ui.text(
                     featured?.description?.takeIf { it.isNotEmpty() }
-                        ?: context.getString(R.string.welcome_detail),
+                        ?: context.getString(
+                            if (hasReadyService) R.string.home_ready_detail
+                            else R.string.welcome_detail
+                        ),
                     16f,
                     ui.muted,
                 )
@@ -203,53 +492,31 @@ class HomeView(
                     }
                 )
             heroActions.addView(ui.button(R.string.more_info) { actions.details(featured) })
-        } else heroActions.addView(ui.button(R.string.configure_services) { actions.settings() })
-        if (scope.provider == "youtube") {
-            heroActions.addView(
-                ui.action(
-                    context.getString(
-                        R.string.search_provider,
-                        context.getString(R.string.youtube),
-                    ),
-                    ui.providerAccent("youtube"),
-                ) {
-                    actions.searchProvider("youtube")
-                }
-            )
-            heroActions.addView(ui.button(R.string.view_all) { actions.catalog("youtube") })
-            heroActions.addView(ui.button(R.string.youtube_receiver) { actions.youtubeReceiver() })
+        } else if (!hasReadyService) {
+            heroActions.addView(ui.button(R.string.configure_services) { actions.settings() })
         }
-        focusRows.add(Pair("hero", heroActions))
-        hero.addView(heroActions)
-        heroStatus = ui.text("", 12f, ui.muted).apply { visibility = GONE }
-        hero.addView(heroStatus)
-        content.addView(
+        if (heroActions.childCount > 0) {
+            focusRows.add(Pair("hero", heroActions))
+            hero.addView(heroActions)
+        }
+        parent.addView(
             heroFrame,
             LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(14), 0, ui.dp(4)) },
         )
-        if (tv && widthDp >= 900f) {
-            val body = ui.row().apply { gravity = Gravity.TOP }
-            val rows = ui.column()
-            body.addView(rows, LinearLayout.LayoutParams(0, -2, 1f))
-            body.addView(
-                HomeStatusPanel(context, ui),
-                LinearLayout.LayoutParams(ui.dp(200), -2).apply {
-                    leftMargin = ui.dp(18)
-                    topMargin = ui.dp(20)
-                },
-            )
-            addView(body, LinearLayout.LayoutParams(-1, -2))
-            content = rows
-        }
+
         if (snapshot.sections.none { it.id == "continue" }) renderServices(snapshot)
         for (section in snapshot.sections.sortedBy { if (it.id == "continue") 0 else 1 }) {
             title(
                 if (section.id == "continue") context.getString(R.string.continue_watching)
                 else ui.serviceTitle(section.id)
             )
+            val hasCatalog =
+                section.id != "continue" &&
+                    section.id != "airplay" &&
+                    section.id != "android_mirror"
             val keys =
                 section.items.map { "item:" + section.id + ":" + it.id } +
-                    if (section.id != "continue") listOf("all:" + section.id) else emptyList()
+                    if (hasCatalog) listOf("all:" + section.id) else emptyList()
             val line =
                 WindowedRow(context, keys, HomeBudget.rowCapacity(heapMb, physicalMb, tv)) { index
                     ->
@@ -296,7 +563,7 @@ class HomeView(
                         cardContent.addView(
                             ui.text(item.title, 19f).apply {
                                 maxLines = 2
-                                typeface = Typeface.DEFAULT_BOLD
+                                typeface = ui.bold
                             }
                         )
                         if (item.subtitle.isNotEmpty())
@@ -325,7 +592,7 @@ class HomeView(
                         card
                     }
                 }
-            content.addView(
+            parent.addView(
                 HorizontalScrollView(context).apply {
                     isHorizontalScrollBarEnabled = false
                     addView(line)
@@ -333,7 +600,7 @@ class HomeView(
             )
             focusRows.add(Pair("section:" + section.id, line))
             if (!tv && keys.size > line.capacity)
-                content.addView(
+                parent.addView(
                     ui.row().apply {
                         addView(
                             ui.button(R.string.previous_page) {
@@ -351,35 +618,160 @@ class HomeView(
                 )
             if (section.id == "continue") renderServices(snapshot)
         }
-        content.addView(
-            ui.text(
-                context.getString(
-                    if (tv) R.string.docked_description else R.string.handheld_description
-                ),
-                14f,
-                ui.muted,
-            )
-        )
-        focus.rebuild(focusRows + Pair("transport", bottom), !full)
     }
 
-    private fun headerAction(label: Int, settings: Boolean, click: () -> Unit): ImageButton =
-        ImageButton(context).apply {
-            contentDescription = context.getString(label)
-            tag = "button:$label"
-            setImageDrawable(HeaderIcon(settings, Color.WHITE))
-            setPadding(ui.dp(13), ui.dp(13), ui.dp(13), ui.dp(13))
-            setBackgroundDrawable(
-                android.graphics.drawable.StateListDrawable().apply {
-                    addState(intArrayOf(android.R.attr.state_focused), ui.box(ui.panel, ui.green))
-                    addState(intArrayOf(android.R.attr.state_pressed), ui.box(ui.panel, ui.green))
-                    addState(intArrayOf(), ui.box(Color.TRANSPARENT))
+    private fun renderProviderScope(
+        parent: LinearLayout,
+        snapshot: HomeSnapshot,
+        provider: String,
+        tv: Boolean,
+    ) {
+        val featured = snapshot.hero
+        if (featured != null && (featured.provider == provider || featured.provider.isEmpty())) {
+            val heroFrame = FrameLayout(context).apply { minimumHeight = ui.dp(210) }
+            val hero =
+                ui.column().apply {
+                    setPadding(ui.dp(20), ui.dp(16), ui.dp(20), ui.dp(16))
+                    setBackgroundDrawable(
+                        GradientDrawable(
+                                GradientDrawable.Orientation.LEFT_RIGHT,
+                                intArrayOf(
+                                    Color.rgb(12, 27, 24),
+                                    Color.rgb(14, 25, 27),
+                                    ui.background,
+                                ),
+                            )
+                            .apply { cornerRadius = ui.dp(10).toFloat() }
+                    )
+                }
+            if (featured.imageUrl.isNotEmpty()) {
+                heroFrame.addView(
+                    artImage(featured.imageUrl, true),
+                    FrameLayout.LayoutParams(-1, -1),
+                )
+                hero.setBackgroundDrawable(
+                    GradientDrawable(
+                        GradientDrawable.Orientation.LEFT_RIGHT,
+                        intArrayOf(Color.argb(240, 10, 15, 16), Color.argb(100, 10, 15, 16)),
+                    )
+                )
+            }
+            heroFrame.addView(hero, FrameLayout.LayoutParams(-1, -2))
+            hero.addView(ui.text(ui.serviceTitle(provider), 12f, ui.providerAccent(provider)))
+            hero.addView(
+                ui.text(featured.title, 26f).apply {
+                    typeface = ui.bold
+                    maxLines = 2
                 }
             )
-            isFocusable = true
-            setOnClickListener { click() }
-            layoutParams = LinearLayout.LayoutParams(ui.dp(48), ui.dp(48))
+            if (featured.subtitle.isNotEmpty()) {
+                hero.addView(ui.text(featured.subtitle, 13f, ui.muted).apply { maxLines = 1 })
+            }
+            val heroActions = ui.row().apply { setPadding(0, ui.dp(8), 0, 0) }
+            if (featured.playable) {
+                heroActions.addView(
+                    ui.primary(
+                        if (featured.positionMs > 0) R.string.resume_content else R.string.play
+                    ) {
+                        actions.play(featured)
+                    }
+                )
+            }
+            heroActions.addView(ui.button(R.string.more_info) { actions.details(featured) })
+            hero.addView(heroActions)
+            parent.addView(
+                heroFrame,
+                LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(6), 0, ui.dp(8)) },
+            )
+            focusRows.add(Pair("$provider:hero", heroActions))
         }
+
+        val sectionsWithItems = snapshot.sections.filter { it.items.isNotEmpty() }
+        if (sectionsWithItems.isEmpty() && featured == null) {
+            val emptyState = ProviderEmptyStateView(context, ui, provider, actions)
+            parent.addView(
+                emptyState,
+                LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, ui.dp(14), 0, ui.dp(14)) },
+            )
+            emptyState.attachActions(focusRows)
+            return
+        }
+
+        for (section in sectionsWithItems) {
+            title(if (section.id == provider) ui.serviceTitle(provider) else section.id)
+            val keys =
+                section.items.map { "item:$provider:${section.id}:${it.id}" } +
+                    listOf("all:$provider:${section.id}")
+            val line =
+                WindowedRow(context, keys, HomeBudget.rowCapacity(heapMb, physicalMb, tv)) { index
+                    ->
+                    if (index == section.items.size) {
+                        ui.button(R.string.view_all) { actions.catalog(provider) }
+                    } else {
+                        val item = section.items[index]
+                        val card =
+                            FrameLayout(context).apply {
+                                tag = "item:$provider:${section.id}:${item.id}"
+                            }
+                        val cardContent = ui.column()
+                        if (item.imageUrl.isNotEmpty()) {
+                            card.addView(
+                                artImage(item.imageUrl, false),
+                                FrameLayout.LayoutParams(-1, -1),
+                            )
+                            cardContent.setBackgroundDrawable(
+                                GradientDrawable(
+                                    GradientDrawable.Orientation.BOTTOM_TOP,
+                                    intArrayOf(
+                                        Color.argb(240, 10, 15, 16),
+                                        Color.argb(90, 10, 15, 16),
+                                    ),
+                                )
+                            )
+                        }
+                        card.addView(cardContent, FrameLayout.LayoutParams(-1, -1))
+                        card.setPadding(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(2))
+                        cardContent.setPadding(ui.dp(8), ui.dp(6), ui.dp(8), ui.dp(6))
+                        cardContent.gravity = Gravity.BOTTOM
+                        card.setBackgroundDrawable(ui.focusBackground(ui.providerAccent(provider)))
+                        card.isFocusable = true
+                        card.isClickable = true
+                        cardContent.addView(
+                            ui.text(
+                                ui.serviceTitle(item.provider),
+                                12f,
+                                ui.providerAccent(item.provider),
+                            )
+                        )
+                        cardContent.addView(
+                            ui.text(item.title, 19f).apply {
+                                maxLines = 2
+                                typeface = ui.bold
+                            }
+                        )
+                        if (item.subtitle.isNotEmpty())
+                            cardContent.addView(
+                                ui.text(item.subtitle, 12f, ui.muted).apply { maxLines = 1 }
+                            )
+                        if (item.positionMs > 0 && item.durationMs > 0)
+                            cardContent.addView(ui.progress(item.positionMs, item.durationMs))
+                        card.setOnClickListener { actions.details(item) }
+                        card.layoutParams =
+                            LinearLayout.LayoutParams(ui.dp(230), ui.dp(130)).apply {
+                                setMargins(ui.dp(3), ui.dp(3), ui.dp(8), ui.dp(3))
+                            }
+                        card
+                    }
+                }
+            parent.addView(
+                HorizontalScrollView(context).apply {
+                    isHorizontalScrollBarEnabled = false
+                    addView(line)
+                }
+            )
+            focusRows.add(Pair("section:$provider:${section.id}", line))
+        }
+    }
 
     private fun renderServices(snapshot: HomeSnapshot) {
         title(context.getString(R.string.apps_content))
@@ -393,26 +785,31 @@ class HomeView(
                     isClickable = true
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6))
-                    setBackgroundDrawable(ui.focusBackground(ui.providerAccent(id)))
+                    setBackgroundDrawable(ui.serviceCardBackground(id))
                     addView(
                         ui.row().apply {
                             addView(
                                 ServiceMarkView(context, id, ui.providerAccent(id)),
-                                LinearLayout.LayoutParams(ui.dp(38), ui.dp(38)),
+                                LinearLayout.LayoutParams(
+                                        ui.dp(if (id == "plex") 78 else 42),
+                                        ui.dp(42),
+                                    )
+                                    .apply { rightMargin = ui.dp(8) },
                             )
                             addView(
                                 ui.column().apply {
-                                    addView(
-                                        ui.text(ui.serviceTitle(id), 16f).apply {
-                                            typeface = Typeface.DEFAULT_BOLD
-                                            setSingleLine(true)
-                                        }
-                                    )
+                                    if (id != "plex")
+                                        addView(
+                                            ui.text(ui.serviceTitle(id), 16f).apply {
+                                                typeface = ui.bold
+                                                setSingleLine(true)
+                                            }
+                                        )
                                     addView(
                                         ui.text(
                                             if (id == "rebrowser" && module.state == "STARTING")
                                                 context.getString(R.string.opens_on_demand)
-                                            else ui.localizedState(module.state),
+                                            else ui.localizedServiceState(id, module.state),
                                             11f,
                                             ui.muted,
                                         )

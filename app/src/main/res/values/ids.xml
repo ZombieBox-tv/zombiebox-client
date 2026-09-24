@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<resources>
+    <item name="media_receiver_close" type="id" />
+    <item name="media_receiver_disabled" type="id" />
+    <item name="media_receiver_spotify" type="id" />
+    <item name="media_receiver_airplay" type="id" />
+    <item name="media_receiver_auto" type="id" />
+    <item name="media_receiver_universal" type="id" />
+</resources>

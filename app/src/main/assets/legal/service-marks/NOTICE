@@ -1,0 +1,37 @@
+Service identification marks bundled in the Client APK
+
+These marks identify the corresponding third-party services. They are not
+Zombie Box logos and do not imply endorsement. Their trademark and brand rules
+remain with their owners; the first-party GPL license does not relicense them.
+The PNG files in drawable-nodpi are size-reduced, aspect-preserving copies of
+the listed official assets for legacy Android decoding.
+
+service_youtube.png: YouTube Icon, red digital PNG, official YouTube brand kit
+https://brand.youtube/youtube-icon
+https://www.gstatic.com/marketing-cms/78/29/3e68a1414bb28d0b7e47b44c3c91/youtube-icon.zip
+https://developers.google.com/youtube/terms/branding-guidelines
+
+service_plex.png: Plex Inc. 2022 white-and-yellow lowercase wordmark on a transparent background,
+rasterized at 512x238 from the brand SVG mirrored by Wikimedia Commons
+https://commons.wikimedia.org/wiki/File:Plex_logo_2022_full-color-on-black.svg
+https://www.plex.tv/blog/new-logo-same-plex/
+https://www.plex.tv/about/privacy-legal/plex-trademarks-and-guidelines/
+
+service_jellyfin.png: Jellyfin icon, color on dark, from the Jellyfin UX project
+https://github.com/jellyfin/jellyfin-ux/tree/master/logos/PNG-4x
+https://jellyfin.org/docs/general/contributing/branding/
+
+service_stremio.png: Stremio service mark from its official website
+https://www.stremio.com/website/stremio-purple-small.png
+
+service_spotify.png: Spotify primary green icon from its official 2024 download
+https://developer.spotify.com/documentation/design
+https://developer.spotify.com/images/guidelines/design/2024-spotify-logo-icon.zip
+
+service_chromium.png: Chromium product logo from Chromium source
+https://chromium.googlesource.com/chromium/src/+/98ecb9715c3e28d32ac6340ac2c1e245823f7d8c/chrome/app/theme/chromium/product_logo_256.png
+Its BSD license is in legal/chromium/LICENSE.
+
+Barlow Regular and SemiBold: The Barlow Project Authors, Google Fonts
+https://github.com/google/fonts/tree/main/ofl/barlow
+The SIL Open Font License is in legal/barlow/OFL.txt.

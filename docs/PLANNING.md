@@ -1,5 +1,20 @@
 # zombiebox-client: component work
 
+## dev.50 TV shell and first Vizio follow-up
+
+Bundle Barlow and crisp service marks, give service cards distinct accent
+treatment, and expose the transient four-digit AirPlay PIN in its app section
+through the paired gateway API. The PIN is separate from the six-digit operator
+code. Replace legacy search, receiver and browser controls with dark,
+D-pad-readable TV views; put a real YouTube video grid and per-service search in
+the provider tabs, and keep an idle player out of the bottom navigation path.
+The selected API-13 Vizio displayed a real YouTube feed/catalog and the AirPlay
+PIN from a locally signed QA APK. Those checks do not establish video playback:
+the selected YouTube item still failed, and iPad AirPlay authentication/media,
+Cast pairing, browser interaction, and broader focus behavior need physical
+retests. The public Full dev.52 image does not include the new PIN route. No
+product milestone closes.
+
 ## dev.45 IPTV category navigation
 
 Select current M3U categories from the IPTV catalog, combine with favorites and

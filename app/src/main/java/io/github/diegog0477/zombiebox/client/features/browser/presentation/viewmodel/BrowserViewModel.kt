@@ -1,5 +1,6 @@
 package io.github.diegog0477.zombiebox.client.features.browser.presentation.viewmodel
 
+import io.github.diegog0477.zombiebox.client.features.browser.domain.model.BrowserDestination
 import io.github.diegog0477.zombiebox.client.features.browser.domain.repository.BrowserRepository
 import io.github.diegog0477.zombiebox.client.features.browser.domain.repository.BrowserSessionExpired
 
@@ -8,6 +9,8 @@ class BrowserViewModel(
     private val execute: (() -> Unit) -> Unit,
     private val deliver: (() -> Unit) -> Unit,
 ) {
+    private data class Command(val action: String, val text: String, val x: Int?, val y: Int?)
+
     var state = BrowserState()
         private set
 
@@ -15,19 +18,22 @@ class BrowserViewModel(
     @Volatile private var closed = false
     private val lifetime = Any()
     private var activeID = ""
+    private val pending = ArrayDeque<Command>()
 
     fun open(url: String) {
-        if (closed || state.loading) return
+        if (closed) return
+        val destination = BrowserDestination.resolve(url)
         if (state.session.isNotEmpty()) {
-            input("navigate", url)
+            input("navigate", destination)
             return
         }
+        if (state.loading) return
         state = state.copy(loading = true, failed = false)
         observer?.invoke(state)
         execute {
             var id = ""
             try {
-                id = repository.start(url)
+                id = repository.start(destination)
                 val abandoned =
                     synchronized(lifetime) {
                         if (closed) true
@@ -76,10 +82,23 @@ class BrowserViewModel(
         if (x in 0 until 960 && y in 0 until 540) update("click", "", x, y)
     }
 
+    fun move(x: Int, y: Int) {
+        if (x in 0 until 960 && y in 0 until 540) update("move", "", x, y)
+    }
+
+    fun scroll(vertical: Int) {
+        if (vertical in -540..540) update("scroll", "", 0, vertical)
+    }
+
     fun input(action: String, text: String = "") = update(action, text)
 
     private fun update(action: String?, text: String, x: Int? = null, y: Int? = null) {
-        if (closed || state.loading || state.session.isEmpty()) return
+        if (closed || state.session.isEmpty()) return
+        if (state.loading) {
+            if (action == "move" && pending.lastOrNull()?.action == "move") pending.removeLast()
+            if (action != null && pending.size < 4) pending.addLast(Command(action, text, x, y))
+            return
+        }
         val previous = state
         state = state.copy(loading = true, failed = false)
         observer?.invoke(state)
@@ -102,6 +121,11 @@ class BrowserViewModel(
                 if (!closed) {
                     state = next
                     observer?.invoke(state)
+                    if (next.failed || next.session.isEmpty()) pending.clear()
+                    else if (pending.isNotEmpty()) {
+                        val command = pending.removeFirst()
+                        update(command.action, command.text, command.x, command.y)
+                    }
                 }
             }
         }
@@ -117,6 +141,7 @@ class BrowserViewModel(
                 current
             }
         state = BrowserState()
+        pending.clear()
         observer = null
         if (id.isNotEmpty() && !preserveSession)
             execute {

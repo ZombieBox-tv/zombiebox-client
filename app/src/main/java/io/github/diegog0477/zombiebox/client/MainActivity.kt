@@ -1,7 +1,6 @@
 package io.github.diegog0477.zombiebox.client
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -21,6 +20,9 @@ import io.github.diegog0477.zombiebox.client.core.model.MediaItem
 import io.github.diegog0477.zombiebox.client.core.presentation.ScreenTasks
 import io.github.diegog0477.zombiebox.client.core.ui.RemoteFocus
 import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
+import io.github.diegog0477.zombiebox.client.features.airplay.data.GatewayAirPlayPairingRepository
+import io.github.diegog0477.zombiebox.client.features.airplay.presentation.ui.AirPlayPairingDialog
+import io.github.diegog0477.zombiebox.client.features.airplay.presentation.viewmodel.AirPlayPairingViewModel
 import io.github.diegog0477.zombiebox.client.features.artwork.data.GatewayArtworkRepository
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.ArtworkImageView
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel.ArtworkViewModel
@@ -40,6 +42,7 @@ import io.github.diegog0477.zombiebox.client.features.discovery.presentation.vie
 import io.github.diegog0477.zombiebox.client.features.home.data.GatewayHomeRepository
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeScope
 import io.github.diegog0477.zombiebox.client.features.home.presentation.ui.HomeActions
+import io.github.diegog0477.zombiebox.client.features.home.presentation.ui.HomePlaybackSession
 import io.github.diegog0477.zombiebox.client.features.home.presentation.ui.HomeView
 import io.github.diegog0477.zombiebox.client.features.home.presentation.viewmodel.HomeViewModel
 import io.github.diegog0477.zombiebox.client.features.mirroring.data.GatewayReceiverRepository
@@ -61,6 +64,8 @@ import io.github.diegog0477.zombiebox.client.features.playback.platform.SurfaceE
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.PlaybackFailureDialog
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.SurfaceOutputView
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.TracksDialog
+import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.TvPlayerActions
+import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.TvPlayerChromeView
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.VideoOutputFactory
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.VideoOutputView
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.viewmodel.PlaybackViewModel
@@ -69,7 +74,9 @@ import io.github.diegog0477.zombiebox.client.features.settings.data.GatewaySetti
 import io.github.diegog0477.zombiebox.client.features.settings.platform.SettingsSavedState
 import io.github.diegog0477.zombiebox.client.features.settings.presentation.ui.SettingsActions
 import io.github.diegog0477.zombiebox.client.features.settings.presentation.ui.SettingsDialogs
+import io.github.diegog0477.zombiebox.client.features.settings.presentation.ui.TvChoicePanel
 import io.github.diegog0477.zombiebox.client.features.settings.presentation.viewmodel.SettingsViewModel
+import io.github.diegog0477.zombiebox.client.features.youtubereceiver.presentation.ui.YouTubeReceiverPanel
 import io.github.diegog0477.zombiebox.shared.GatewayApi
 import io.github.diegog0477.zombiebox.shared.GatewayDiscovery
 import io.github.diegog0477.zombiebox.shared.GatewayFailure
@@ -83,6 +90,17 @@ class MainActivity : Activity() {
 
     private var artworkScope = ""
 
+    private fun currentPlaybackSession(): HomePlaybackSession =
+        HomePlaybackSession(
+            active = session.isNotEmpty(),
+            item = currentItem,
+            state = lastState,
+            positionMs = lastPosition,
+            durationMs = lastDuration,
+            canNext = ::nextButton.isInitialized && nextButton.isEnabled,
+            canPrevious = currentItem?.provider == "spotify",
+        )
+
     private fun render() {
         val scope = api.base + "\n" + api.token
         artwork.reset(clearCache = artworkScope != scope)
@@ -93,10 +111,11 @@ class MainActivity : Activity() {
             snapshot,
             homeViewModel.state.scope,
             isTV(),
-            bottom,
             full && session.isNotEmpty(),
+            currentPlaybackSession(),
         )
         content.status(homeViewModel.state.loading, homeViewModel.state.failure != null)
+        if (!full && session.isNotEmpty()) content.post { positionDockedVideo() }
     }
 
     private val settingsModel by lazy {
@@ -131,7 +150,7 @@ class MainActivity : Activity() {
     private lateinit var subtitleText: TextView
     private var timelineOffset = 0
     private var playbackSeekable = true
-    private val seekButtons = ArrayList<Button>()
+    private val seekButtons = ArrayList<View>()
     private lateinit var playerControls: LinearLayout
 
     private val playbackModel by lazy {
@@ -254,7 +273,11 @@ class MainActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var youtubeIncoming = false
     private var diagnosticsModel: DiagnosticsViewModel? = null
-    private var youtubeDialog: AlertDialog? = null
+    private var youtubeDialog: YouTubeReceiverPanel? = null
+    private var shownYouTubePlaybackIssueRevision = 0L
+    private var receiverOptionsPanel: TvChoicePanel? = null
+    private var receiverOptionsLoading = false
+    private var audioOptionsPanel: TvChoicePanel? = null
     private val receiverTick =
         object : Runnable {
             override fun run() {
@@ -300,12 +323,13 @@ class MainActivity : Activity() {
     private lateinit var root: FrameLayout
     private lateinit var content: HomeView
     private lateinit var now: TextView
-    private lateinit var playerLayer: LinearLayout
+    private lateinit var playerLayer: FrameLayout
+    private lateinit var playerChrome: TvPlayerChromeView
     private lateinit var playerStatus: TextView
     private lateinit var videoSurface: VideoOutputView
     private lateinit var videoViewport: FrameLayout
     private lateinit var player: PlaybackConnection
-    private lateinit var nextButton: Button
+    private lateinit var nextButton: View
     private var restoreFullscreen = true
     private var queueFailed = false
     private lateinit var homeViewModel: HomeViewModel
@@ -363,7 +387,6 @@ class MainActivity : Activity() {
         root.setBackgroundColor(background)
         val shell = ui.column()
         root.addView(shell, FrameLayout.LayoutParams(-1, -1))
-        val scroll = ScrollView(this)
         content =
             HomeView(
                 this,
@@ -381,23 +404,30 @@ class MainActivity : Activity() {
                     searchProvider = { provider -> searchProvider(provider) },
                     devices = { settingsDialogs.devices() },
                     youtubeReceiver = { youtubeReceiverSettings() },
+                    airplayPairing = { airplayPairing() },
+                    airplayAudioOptions = { mediaReceiverSettings() },
+                    airplayConfigure = { settingsDialogs.providers(selectedKey = "airplay") },
                     catalog = { provider -> catalogPage(provider) },
                     mirrorReceiver = { receiverSettings() },
                     providers = { providerList() },
                     pair = { pairing() },
+                    playPause = { togglePlayback() },
+                    next = { if (session.isNotEmpty()) player.next() },
+                    previous = {
+                        if (
+                            currentItem?.provider == "spotify" &&
+                                receiverViewModel.activeSession == session
+                        ) {
+                            receiverViewModel.command("previous", ::error)
+                        }
+                    },
+                    expand = { if (session.isNotEmpty()) togglePlayerSize() },
                 ),
             )
         content.setPadding(ui.dp(22), ui.dp(16), ui.dp(22), ui.dp(18))
-        scroll.addView(content)
-        shell.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        shell.addView(content, LinearLayout.LayoutParams(-1, -1))
         bottom = ui.row()
-        bottom.setPadding(ui.dp(16), ui.dp(4), ui.dp(16), ui.dp(4))
-        bottom.setBackgroundColor(panel)
-        now = ui.text(getString(R.string.nothing_playing), 16f)
-        bottom.addView(now, LinearLayout.LayoutParams(0, -2, 1f))
-        bottom.addView(ui.button(R.string.play_pause) { togglePlayback() })
-        bottom.addView(ui.button(R.string.expand) { if (session.isNotEmpty()) togglePlayerSize() })
-        shell.addView(bottom)
+        now = ui.text("", 16f)
         createPlayer()
         player =
             PlaybackConnection(
@@ -422,6 +452,10 @@ class MainActivity : Activity() {
                         ui.formatTime(lastPosition),
                         ui.formatTime(lastDuration),
                     )
+                if (::playerChrome.isInitialized) {
+                    playerChrome.updateProgress(status, lastPosition, lastDuration)
+                }
+                content.updatePlaybackProgress(status, lastPosition, lastDuration)
                 if (
                     session.isNotEmpty() &&
                         (!::receiverViewModel.isInitialized ||
@@ -436,7 +470,8 @@ class MainActivity : Activity() {
                         lastState != "FAILED" &&
                         foreground &&
                         receiverViewModel.activeSession.isEmpty() &&
-                        session.isNotEmpty()
+                        session.isNotEmpty() &&
+                        !youtubeIncoming
                 ) {
                     showPlaybackFailure()
                 }
@@ -444,7 +479,10 @@ class MainActivity : Activity() {
             }
         audioController = player
         player.configure(api.base, api.device, api.token)
-        player.youtubeChanged = { youtubeDialog?.setMessage(youtubeReceiverMessage()) }
+        player.youtubeChanged = {
+            youtubeDialog?.update(player.youtubeState)
+            showYouTubePlaybackIssue()
+        }
         val backgroundExecutor = worker
         val uiHandler = handler
         homeViewModel =
@@ -525,23 +563,31 @@ class MainActivity : Activity() {
     }
 
     private fun audioSettings() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.audio_focus_backend)
-            .setSingleChoiceItems(
-                arrayOf(
-                    getString(R.string.backend_auto),
-                    getString(R.string.backend_compatibility),
-                ),
-                if (prefs.getBoolean("audioFocusCompatibility", false)) 1 else 0,
-            ) { dialog, index ->
-                player.pause()
-                audioController.release()
-                prefs.edit().putBoolean("audioFocusCompatibility", index == 1).commit()
-                player.refreshFocus()
-                dialog.dismiss()
-            }
-            .setNegativeButton(R.string.close, null)
-            .show()
+        if (audioOptionsPanel?.visible == true) return
+        val selected = prefs.getBoolean("audioFocusCompatibility", false)
+        val panel = TvChoicePanel(this) { audioOptionsPanel = null }
+        audioOptionsPanel = panel
+        panel.show(
+            section = R.string.advanced,
+            title = R.string.audio_focus_backend,
+            description = null,
+            options =
+                listOf(R.string.backend_auto, R.string.backend_compatibility).mapIndexed {
+                    index,
+                    label ->
+                    TvChoicePanel.Option(label = label, selected = (index == 1) == selected) {
+                        if ((index == 1) == selected) {
+                            panel.dismiss()
+                            return@Option
+                        }
+                        player.pause()
+                        audioController.release()
+                        prefs.edit().putBoolean("audioFocusCompatibility", index == 1).commit()
+                        player.refreshFocus()
+                        panel.dismiss()
+                    }
+                },
+        )
     }
 
     private fun diagnostics() {
@@ -565,39 +611,32 @@ class MainActivity : Activity() {
         DiagnosticsDialog(this, model).show()
     }
 
-    private fun youtubeReceiverMessage(): String {
-        val value = player.youtubeState.receiver
-        return when {
-            player.youtubeState.failed -> getString(R.string.unavailable)
-            value == null ->
-                getString(
-                    if (player.youtubeState.enabled) R.string.loading
-                    else R.string.youtube_receiver_detail
-                )
-            value.code.isEmpty() -> getString(R.string.loading)
-            else -> getString(R.string.youtube_tv_code, value.code)
-        }
-    }
-
     private fun youtubeReceiverSettings() {
         if (api.token.isEmpty()) {
             pairing()
             return
         }
-        val dialog =
-            AlertDialog.Builder(this)
-                .setTitle(R.string.youtube_receiver)
-                .setMessage(youtubeReceiverMessage())
-                .setPositiveButton(R.string.enable) { _, _ ->
-                    player.enableYouTube()
-                    youtubeReceiverSettings()
-                }
-                .setNeutralButton(R.string.disable) { _, _ -> player.disableYouTube() }
-                .setNegativeButton(R.string.close, null)
-                .create()
-        youtubeDialog = dialog
-        dialog.setOnDismissListener { if (youtubeDialog === dialog) youtubeDialog = null }
-        dialog.show()
+        if (youtubeDialog?.visible == true) return
+        youtubeDialog =
+            YouTubeReceiverPanel(
+                    this,
+                    onEnable = { player.enableYouTube() },
+                    onDisable = { player.disableYouTube() },
+                    onClosed = { panel -> if (youtubeDialog === panel) youtubeDialog = null },
+                )
+                .also { it.show(player.youtubeState) }
+    }
+
+    private fun showYouTubePlaybackIssue() {
+        if (!foreground || closed || isFinishing) return
+        val state = player.youtubeState
+        if (
+            state.playbackIssue == null ||
+                state.playbackIssueRevision <= shownYouTubePlaybackIssueRevision
+        )
+            return
+        shownYouTubePlaybackIssueRevision = state.playbackIssueRevision
+        if (youtubeDialog?.visible != true) youtubeReceiverSettings()
     }
 
     private fun receiverSettings() {
@@ -605,39 +644,108 @@ class MainActivity : Activity() {
             pairing()
             return
         }
+        if (receiverOptionsLoading || receiverOptionsPanel?.visible == true) return
+        receiverOptionsLoading = true
         receiverViewModel.readEnabled(
             { enabled ->
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.receive_cast)
-                    .setMessage(R.string.receive_cast_detail)
-                    .setPositiveButton(if (enabled) R.string.disable else R.string.enable) { _, _ ->
-                        receiverViewModel.setEnabled(!enabled, ::error) {
-                            player.configureReceivers(castEnabled = !enabled)
-                        }
-                    }
-                    .setNeutralButton(R.string.receiver_handoff) { _, _ ->
-                        receiverHandoffSettings()
-                    }
-                    .setNegativeButton(R.string.cancel, null)
-                    .show()
+                receiverOptionsLoading = false
+                if (closed || isFinishing) return@readEnabled
+                val panel = TvChoicePanel(this) { receiverOptionsPanel = null }
+                receiverOptionsPanel = panel
+                showReceiverOptions(panel, enabled)
             },
-            ::error,
+            { failure ->
+                receiverOptionsLoading = false
+                error(failure)
+            },
         )
     }
 
-    private fun receiverHandoffSettings() {
-        receiverViewModel.readHandoff(
-            { enabled ->
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.receiver_handoff)
-                    .setMessage(R.string.receiver_handoff_detail)
-                    .setPositiveButton(if (enabled) R.string.disable else R.string.enable) { _, _ ->
-                        receiverViewModel.setHandoff(!enabled, ::error)
+    private fun showReceiverOptions(panel: TvChoicePanel, enabled: Boolean) {
+        val choices =
+            listOf(true, false).map { target ->
+                TvChoicePanel.Option(
+                    label = if (target) R.string.enabled else R.string.disabled,
+                    selected = target == enabled,
+                ) {
+                    if (target == enabled) return@Option
+                    panel.setBusy(true)
+                    receiverViewModel.setEnabled(
+                        target,
+                        { failure ->
+                            panel.setBusy(false)
+                            error(failure)
+                        },
+                    ) {
+                        player.configureReceivers(castEnabled = target)
+                        if (panel.visible) showReceiverOptions(panel, target)
                     }
-                    .setNegativeButton(R.string.cancel, null)
-                    .show()
+                }
+            } +
+                TvChoicePanel.Option(
+                    label = R.string.receiver_handoff,
+                    detail = R.string.receiver_handoff_detail,
+                ) {
+                    receiverHandoffSettings(panel)
+                }
+        panel.show(
+            section = R.string.devices,
+            title = R.string.receive_cast,
+            description = R.string.receive_cast_detail,
+            options = choices,
+        )
+    }
+
+    private fun receiverHandoffSettings(panel: TvChoicePanel) {
+        panel.setBusy(true)
+        receiverViewModel.readHandoff(
+            { enabled -> if (panel.visible) showReceiverHandoffOptions(panel, enabled) },
+            { failure ->
+                panel.setBusy(false)
+                error(failure)
             },
-            ::error,
+        )
+    }
+
+    private fun showReceiverHandoffOptions(panel: TvChoicePanel, enabled: Boolean) {
+        val choices =
+            listOf(true, false).map { target ->
+                TvChoicePanel.Option(
+                    label = if (target) R.string.enabled else R.string.disabled,
+                    selected = target == enabled,
+                ) {
+                    if (target == enabled) return@Option
+                    panel.setBusy(true)
+                    receiverViewModel.setHandoff(target) { failure ->
+                        panel.setBusy(false)
+                        error(failure)
+                    }
+                    receiverViewModel.readHandoff(
+                        { confirmed ->
+                            if (panel.visible) showReceiverHandoffOptions(panel, confirmed)
+                        },
+                        { failure ->
+                            panel.setBusy(false)
+                            error(failure)
+                        },
+                    )
+                }
+            }
+        panel.show(
+            section = R.string.devices,
+            title = R.string.receiver_handoff,
+            description = R.string.receiver_handoff_detail,
+            options = choices,
+            onBack = {
+                panel.setBusy(true)
+                receiverViewModel.readEnabled(
+                    { current -> if (panel.visible) showReceiverOptions(panel, current) },
+                    { failure ->
+                        panel.setBusy(false)
+                        error(failure)
+                    },
+                )
+            },
         )
     }
 
@@ -654,6 +762,20 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun airplayPairing() {
+        if (api.token.isEmpty()) {
+            pairing()
+            return
+        }
+        val model =
+            AirPlayPairingViewModel(
+                GatewayAirPlayPairingRepository(api),
+                { work -> worker.execute { work() } },
+                { work -> handler.post { work() } },
+            )
+        AirPlayPairingDialog(this, model).show()
+    }
+
     private fun updateReceiver(plan: ReceiverPlan) {
         currentItem = plan.item
         receiverState = plan.state
@@ -663,6 +785,7 @@ class MainActivity : Activity() {
             listOf(itemTitle, plan.item?.subtitle ?: "")
                 .filter { it.isNotEmpty() }
                 .joinToString(" — ")
+        content.setPlaybackSession(currentPlaybackSession())
         receiverInfo.text =
             listOf(itemTitle, plan.item?.subtitle ?: "", ui.localizedState(plan.state))
                 .filter { it.isNotEmpty() }
@@ -672,6 +795,9 @@ class MainActivity : Activity() {
             if (!plan.fullscreen && !plan.item?.imageUrl.isNullOrEmpty()) View.VISIBLE
             else View.GONE
         receiverArtwork.bind(artwork, if (plan.fullscreen) "" else plan.item?.imageUrl ?: "")
+        if (::playerChrome.isInitialized && full) {
+            updatePlayerChrome()
+        }
     }
 
     private fun receiveCast(plan: ReceiverPlan?) {
@@ -785,7 +911,7 @@ class MainActivity : Activity() {
     }
 
     private fun createPlayer() {
-        playerLayer = ui.column()
+        playerLayer = FrameLayout(this)
         playerLayer.setBackgroundColor(Color.BLACK)
         playerLayer.visibility = View.GONE
         val viewport = FrameLayout(this)
@@ -814,40 +940,62 @@ class MainActivity : Activity() {
         viewport.addView(
             subtitleText,
             FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
-                setMargins(ui.dp(24), 0, ui.dp(24), ui.dp(18))
+                setMargins(ui.dp(24), 0, ui.dp(24), ui.dp(140))
             },
         )
-        playerLayer.addView(viewport, LinearLayout.LayoutParams(-1, 0, 1f))
-        playerStatus = ui.text("", 12f, muted)
-        playerLayer.addView(playerStatus)
-        val controls = ui.row()
-        playerControls = controls
-        playerLayer.addView(HorizontalScrollView(this).apply { addView(controls) })
-        seekButtons.clear()
-        val back = ui.button(R.string.seek_back) { seek(-10000) }
-        val forward = ui.button(R.string.seek_forward) { seek(10000) }
-        seekButtons.add(back)
-        seekButtons.add(forward)
-        controls.addView(back)
-        controls.addView(ui.button(R.string.play_pause) { togglePlayback() })
-        controls.addView(forward)
-        controls.addView(ui.button(R.string.audio_tracks) { showTracks("audio") })
-        controls.addView(ui.button(R.string.subtitles) { showTracks("subtitle") })
-        controls.addView(ui.button(R.string.minimize) { togglePlayerSize() })
-        nextButton = ui.button(R.string.next_item) { player.next() }
+        playerLayer.addView(viewport, FrameLayout.LayoutParams(-1, -1))
+        playerStatus = ui.text("", 12f, muted).apply { visibility = View.GONE }
+
+        playerChrome =
+            TvPlayerChromeView(
+                this,
+                ui,
+                artwork,
+                artworkDecoder,
+                TvPlayerActions(
+                    seekBack = { seek(-10000) },
+                    previous = {
+                        if (
+                            currentItem?.provider == "spotify" &&
+                                receiverViewModel.activeSession == session
+                        ) {
+                            receiverViewModel.command("previous", ::error)
+                        }
+                    },
+                    playPause = { togglePlayback() },
+                    next = { player.next() },
+                    seekForward = { seek(10000) },
+                    audioTracks = { showTracks("audio") },
+                    subtitles = { showTracks("subtitle") },
+                    minimize = { togglePlayerSize() },
+                    external = { external() },
+                    stop = { stopPlayback() },
+                    playItem = { item ->
+                        startPlayback(item, fullscreen = true, catalogOrigin = true)
+                    },
+                ),
+            )
+        playerControls = playerChrome.videoControlsRow
+        nextButton = playerChrome.videoNextButton
         nextButton.isEnabled = false
-        controls.addView(nextButton)
-        controls.addView(ui.button(R.string.external_player) { external() })
-        controls.addView(ui.button(R.string.stop) { stopPlayback() })
-        playerFocus.rebuild(listOf(Pair("player", controls)), false)
+        seekButtons.clear()
+        seekButtons.add(playerChrome.videoSeekBackButton)
+        seekButtons.add(playerChrome.videoSeekForwardButton)
+        seekButtons.add(playerChrome.audioSeekBackButton)
+        seekButtons.add(playerChrome.audioSeekForwardButton)
+
+        playerLayer.addView(playerChrome, FrameLayout.LayoutParams(-1, -1))
+        playerFocus.rebuild(playerChrome.focusRows(), false)
         root.addView(playerLayer, FrameLayout.LayoutParams(-1, -1))
     }
 
     private fun setSeekable(value: Boolean) {
         playbackSeekable = value
         seekButtons.forEach { it.isEnabled = value }
-        if (::playerControls.isInitialized)
-            playerFocus.rebuild(listOf(Pair("player", playerControls)), false)
+        if (::playerChrome.isInitialized) {
+            playerChrome.setSeekable(value)
+            playerFocus.rebuild(playerChrome.focusRows(), false)
+        }
     }
 
     private fun seek(delta: Int) {
@@ -872,6 +1020,9 @@ class MainActivity : Activity() {
         if (playbackPending) return
         youtubeIncoming = state.incoming && state.item?.provider == "youtube"
         nextButton.isEnabled = state.canNext
+        if (::playerChrome.isInitialized) {
+            playerChrome.setCanNext(state.canNext)
+        }
         if (state.error && !queueFailed)
             Toast.makeText(this, R.string.next_failed, Toast.LENGTH_LONG).show()
         queueFailed = state.error
@@ -889,6 +1040,7 @@ class MainActivity : Activity() {
             currentItem = state.item
             itemTitle = state.item?.title ?: getString(R.string.screen_mirroring)
             now.text = itemTitle
+            content.setPlaybackSession(currentPlaybackSession())
             attachTracks(plan, state.subtitleId)
             if (youtubeIncoming) receiverViewModel.reset()
             if (state.incoming && !youtubeIncoming) {
@@ -1026,6 +1178,7 @@ class MainActivity : Activity() {
                 player.adopt(plan, item, queue, cursor)
                 itemTitle = item.title
                 now.text = itemTitle
+                content.setPlaybackSession(currentPlaybackSession())
                 lastState = ""
                 lastReport = 0
                 lastPosition = plan.resumePositionMs + plan.timelineOffsetMs
@@ -1127,22 +1280,106 @@ class MainActivity : Activity() {
         if (returning) catalogDialogs.resumePlayback()
     }
 
+    private fun getYouTubeRelated(): List<MediaItem> {
+        if (currentItem?.provider != "youtube") return emptyList()
+        val currentId = currentItem?.id ?: ""
+        val catalogItems =
+            catalogModel.screen?.page?.items?.filter {
+                it.id != currentId && (it.provider.isEmpty() || it.provider == "youtube")
+            }
+        if (!catalogItems.isNullOrEmpty()) return catalogItems
+        val snapshotItems =
+            snapshot.sections
+                .filter { section ->
+                    section.id.contains("youtube", ignoreCase = true) ||
+                        section.items.any { it.provider == "youtube" }
+                }
+                .flatMap { it.items }
+                .filter { it.id != currentId }
+                .distinctBy { it.id }
+        if (snapshotItems.isNotEmpty()) return snapshotItems
+        return snapshot.sections
+            .flatMap { it.items }
+            .filter { it.id != currentId && it.provider == "youtube" }
+            .distinctBy { it.id }
+    }
+
+    private fun updatePlayerChrome() {
+        if (!::playerChrome.isInitialized) return
+        val isAudio = currentItem?.kind == "audio" || (currentItem?.provider == "spotify")
+        val accent = contextAccent()
+        val canPrev = currentItem?.provider == "spotify"
+        val canNext = ::nextButton.isInitialized && nextButton.isEnabled
+        val related = if (currentItem?.provider == "youtube") getYouTubeRelated() else emptyList()
+        playerChrome.bindSession(
+            item = currentItem,
+            isAudio = isAudio,
+            accent = accent,
+            canPrevious = canPrev,
+            canNext = canNext,
+            seekable = playbackSeekable,
+            relatedItems = related,
+        )
+        playerChrome.updateProgress(lastState, lastPosition, lastDuration)
+        playerFocus.rebuild(playerChrome.focusRows(), false)
+    }
+
     private fun setFullscreen(value: Boolean) {
         full = value
-        playerLayer.visibility = View.VISIBLE
+        if (full) {
+            val isAudio = currentItem?.kind == "audio" || (currentItem?.provider == "spotify")
+            playerLayer.visibility = View.VISIBLE
+            playerLayer.layoutParams = FrameLayout.LayoutParams(-1, -1)
+            playerStatus.visibility = View.GONE
+            if (isAudio) {
+                videoSurface.view.visibility = View.GONE
+            } else {
+                videoSurface.view.visibility = View.VISIBLE
+            }
+            if (::playerChrome.isInitialized) {
+                playerChrome.visibility = View.VISIBLE
+                updatePlayerChrome()
+            }
+            content.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            playerLayer.bringToFront()
+            playerFocus.restore()
+        } else {
+            content.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+            if (::playerChrome.isInitialized) playerChrome.visibility = View.GONE
+            val isAudio = currentItem?.kind == "audio" || (currentItem?.provider == "spotify")
+            if (isAudio || session.isEmpty()) {
+                playerLayer.visibility = View.GONE
+            } else {
+                playerStatus.visibility = View.GONE
+                videoSurface.view.visibility = View.VISIBLE
+                if (isTV()) {
+                    playerLayer.visibility = View.VISIBLE
+                    playerLayer.bringToFront()
+                    content.post { positionDockedVideo() }
+                } else {
+                    playerLayer.visibility = View.GONE
+                }
+            }
+            homeFocus.restore()
+        }
+    }
+
+    private fun positionDockedVideo() {
+        if (full || session.isEmpty() || currentItem?.kind == "audio") return
+        val parent = playerLayer.parent as? View ?: return
+        val dock =
+            content.videoDockRect(parent)
+                ?: run {
+                    playerLayer.visibility = View.GONE
+                    return
+                }
         playerLayer.layoutParams =
-            if (full) FrameLayout.LayoutParams(-1, -1)
-            else
-                FrameLayout.LayoutParams(ui.dp(320), ui.dp(230), Gravity.BOTTOM or Gravity.RIGHT)
-                    .apply {
-                        bottomMargin = ui.dp(58)
-                        rightMargin = ui.dp(12)
-                    }
-        content.descendantFocusability =
-            if (full) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS
-        bottom.descendantFocusability = content.descendantFocusability
-        playerLayer.bringToFront()
-        if (full) playerFocus.restore() else homeFocus.restore()
+            FrameLayout.LayoutParams(dock.width(), dock.height(), Gravity.TOP or Gravity.LEFT)
+                .apply {
+                    leftMargin = dock.left
+                    topMargin = dock.top
+                }
+        playerLayer.visibility = View.VISIBLE
     }
 
     private fun stopPlayback(keepReceiver: Boolean = false, endSession: Boolean = true) {
@@ -1167,10 +1404,11 @@ class MainActivity : Activity() {
         timelineOffset = 0
         full = false
         if (endSession) player.end(preserveInterrupted = keepReceiver)
+        if (::playerChrome.isInitialized) playerChrome.visibility = View.GONE
         playerLayer.visibility = View.GONE
         now.setText(R.string.nothing_playing)
         content.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
-        bottom.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        content.setPlaybackSession(HomePlaybackSession(active = false))
         homeFocus.restore()
     }
 
@@ -1187,7 +1425,8 @@ class MainActivity : Activity() {
 
     private fun contextAccent(): Int =
         ui.providerAccent(
-            if (::homeViewModel.isInitialized) homeViewModel.state.scope.provider else ""
+            currentItem?.provider?.takeIf { it.isNotEmpty() }
+                ?: (if (::homeViewModel.isInitialized) homeViewModel.state.scope.provider else "")
         )
 
     private fun remoteCommand(
@@ -1273,14 +1512,64 @@ class MainActivity : Activity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val key = event.keyCode
         if (currentFocus !is EditText) {
-            if (
-                event.action == KeyEvent.ACTION_DOWN &&
-                    (if (full && session.isNotEmpty()) playerFocus else homeFocus).move(
-                        key,
-                        currentFocus,
-                    )
-            )
-                return true
+            val isPlaying = session.isNotEmpty()
+            if (full && isPlaying) {
+                if (event.action == KeyEvent.ACTION_DOWN && playerFocus.move(key, currentFocus))
+                    return true
+            } else {
+                if (content.isRightRailFocused()) {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        when (key) {
+                            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                val next = content.moveRightRailFocus(key, currentFocus)
+                                if (next != null) {
+                                    next.requestFocus()
+                                    return true
+                                }
+                                content.restoreMainContentFocus()
+                                return true
+                            }
+                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                val next = content.moveRightRailFocus(key, currentFocus)
+                                if (next != null) {
+                                    next.requestFocus()
+                                    return true
+                                }
+                                return true
+                            }
+                            KeyEvent.KEYCODE_DPAD_UP,
+                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                content.restoreMainContentFocus()
+                                return true
+                            }
+                        }
+                    }
+                    if (
+                        key == KeyEvent.KEYCODE_BACK &&
+                            event.action == KeyEvent.ACTION_UP &&
+                            !event.isCanceled
+                    ) {
+                        content.restoreMainContentFocus()
+                        return true
+                    }
+                } else {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        if (key == KeyEvent.KEYCODE_DPAD_RIGHT && content.isRightRailActive()) {
+                            val beforeKey = homeFocus.selectedKey
+                            if (homeFocus.move(key, currentFocus)) {
+                                if (homeFocus.selectedKey == beforeKey) {
+                                    if (content.focusRightRail()) return true
+                                }
+                                return true
+                            } else {
+                                if (content.focusRightRail()) return true
+                            }
+                        } else {
+                            if (homeFocus.move(key, currentFocus)) return true
+                        }
+                    }
+                }
+            }
             // Preserve native CENTER/ENTER activation; gamepad A follows the same key-up contract.
             if (key == KeyEvent.KEYCODE_BUTTON_A) {
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0)
@@ -1329,7 +1618,9 @@ class MainActivity : Activity() {
 
     override fun onBackPressed() {
         if (full) togglePlayerSize()
-        else if (session.isNotEmpty()) {
+        else if (content.isRightRailFocused()) {
+            content.restoreMainContentFocus()
+        } else if (session.isNotEmpty()) {
             stopPlayback()
             catalogDialogs.resume()
         } else if (!catalogDialogs.resume()) super.onBackPressed()
@@ -1362,6 +1653,7 @@ class MainActivity : Activity() {
         if (::player.isInitialized) {
             if (session.isNotEmpty() && !audioController.acquire()) player.pause()
             player.foreground(true)
+            showYouTubePlaybackIssue()
         }
         if (::receiverViewModel.isInitialized && api.token.isNotEmpty()) {
             receiverViewModel.resumeForeground()
@@ -1371,7 +1663,8 @@ class MainActivity : Activity() {
             !playbackPending &&
                 lastState == "FAILED" &&
                 session.isNotEmpty() &&
-                receiverViewModel.activeSession.isEmpty()
+                receiverViewModel.activeSession.isEmpty() &&
+                !youtubeIncoming
         )
             showPlaybackFailure()
     }
@@ -1402,6 +1695,8 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         playbackFailure.dismiss()
         closed = true
+        receiverOptionsPanel?.dismiss()
+        audioOptionsPanel?.dismiss()
         events.close()
         companionController.close()
         settingsDialogs.close()

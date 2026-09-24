@@ -4,6 +4,7 @@ import io.github.diegog0477.zombiebox.client.core.model.MediaItem
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.viewmodel.PlaybackSessionViewModel
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.viewmodel.PlaybackViewModel
 import io.github.diegog0477.zombiebox.client.features.youtubereceiver.domain.model.YouTubeCommand
+import io.github.diegog0477.zombiebox.client.features.youtubereceiver.domain.model.YouTubePlaybackIssue
 import io.github.diegog0477.zombiebox.client.features.youtubereceiver.domain.model.YouTubeReception
 import io.github.diegog0477.zombiebox.client.features.youtubereceiver.domain.repository.YouTubePlaybackControl
 
@@ -36,11 +37,21 @@ class YouTubeReceptionViewModel(
         observer?.invoke(state)
     }
 
+    private fun playbackFailed(issue: YouTubePlaybackIssue) {
+        if (!state.enabled || state.playbackIssue == issue) return
+        state =
+            state.copy(
+                playbackIssue = issue,
+                playbackIssueRevision = state.playbackIssueRevision + 1,
+            )
+        publish()
+    }
+
     fun enable() {
         if (closed || (state.enabled && !state.failed)) return
         attempts = 0
         retryAt = 0
-        state = state.copy(enabled = true)
+        state = state.copy(enabled = true, playbackIssue = null)
         publish()
         tick()
     }
@@ -61,10 +72,12 @@ class YouTubeReceptionViewModel(
     fun standby() {
         resolver.stop("", null)
         lease.standby()
+        state = state.copy(playbackIssue = null)
+        publish()
     }
 
     fun disable() {
-        state = state.copy(enabled = false)
+        state = state.copy(enabled = false, playbackIssue = null)
         resolver.stop("", null)
         lease.disable()
         endIncoming()
@@ -78,7 +91,10 @@ class YouTubeReceptionViewModel(
     }
 
     fun playbackState(status: String, position: Int, duration: Int) {
-        if (state.enabled && ownsPlayback()) lease.playerState(status, position, duration)
+        if (state.enabled && ownsPlayback()) {
+            if (status == "FAILED") playbackFailed(YouTubePlaybackIssue.UNAVAILABLE)
+            lease.playerState(status, position, duration)
+        }
     }
 
     private fun receive(command: YouTubeCommand) {
@@ -115,7 +131,14 @@ class YouTubeReceptionViewModel(
     }
 
     private fun start(command: YouTubeCommand) {
-        val receiver = lease.receiver ?: return
+        val receiver = lease.receiver
+        if (receiver == null) {
+            playbackFailed(YouTubePlaybackIssue.UNAVAILABLE)
+            lease.complete(false, command.id)
+            return
+        }
+        state = state.copy(playbackIssue = null)
+        publish()
         val item = MediaItem(command.itemId, "youtube", title)
         resolver.start(
             item.id,
@@ -125,6 +148,10 @@ class YouTubeReceptionViewModel(
                     !state.enabled || !lease.accepts(command.id) || plan.mode == "EXTERNAL_PLAYER"
                 ) {
                     resolver.stop(plan.sessionId, null)
+                    if (
+                        state.enabled && lease.accepts(command.id) && plan.mode == "EXTERNAL_PLAYER"
+                    )
+                        playbackFailed(YouTubePlaybackIssue.EXTERNAL_PLAYER_REQUIRED)
                     lease.complete(false, command.id)
                 } else {
                     session.rememberInterruption()
@@ -133,7 +160,11 @@ class YouTubeReceptionViewModel(
                     playback.play(plan, item)
                 }
             },
-            failed = { lease.complete(false, command.id) },
+            failed = {
+                if (state.enabled && lease.accepts(command.id))
+                    playbackFailed(YouTubePlaybackIssue.UNAVAILABLE)
+                lease.complete(false, command.id)
+            },
             positionMs = command.positionMs,
             receiverId = receiver.id,
         )
@@ -141,7 +172,7 @@ class YouTubeReceptionViewModel(
 
     fun close() {
         closed = true
-        state = state.copy(enabled = false)
+        state = state.copy(enabled = false, playbackIssue = null)
         observer = null
         resolver.close()
         lease.close()

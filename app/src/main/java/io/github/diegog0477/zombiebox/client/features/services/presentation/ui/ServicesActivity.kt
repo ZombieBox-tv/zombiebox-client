@@ -9,6 +9,7 @@ import android.os.Handler
 import android.text.InputType
 import android.widget.*
 import io.github.diegog0477.zombiebox.client.R
+import io.github.diegog0477.zombiebox.client.core.ui.TvTypography
 import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
 import io.github.diegog0477.zombiebox.client.features.services.data.GatewayServicesRepository
 import io.github.diegog0477.zombiebox.client.features.services.presentation.viewmodel.ServicesViewModel
@@ -50,12 +51,14 @@ class ServicesActivity : Activity() {
                 setText(id)
                 setTextColor(Color.WHITE)
                 textSize = 18f
+                typeface = TvTypography.regular(this@ServicesActivity)
                 root.addView(this)
             }
         fun button(id: Int, click: () -> Unit) =
             Button(this).apply {
                 setText(id)
                 setOnClickListener { click() }
+                typeface = TvTypography.semibold(this@ServicesActivity)
                 isFocusable = true
                 val focused =
                     GradientDrawable().apply {
@@ -91,6 +94,7 @@ class ServicesActivity : Activity() {
                 setHint(R.string.operator_code)
                 setHintTextColor(Color.LTGRAY)
                 setTextColor(Color.WHITE)
+                typeface = TvTypography.regular(this@ServicesActivity)
                 setBackgroundDrawable(ui.box(ui.panel, ui.muted))
                 setPadding(ui.dp(12), 0, ui.dp(12), 0)
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD

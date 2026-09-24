@@ -19,6 +19,8 @@ class YouTubeReceptionViewModelTest {
         var expired = false
         var unavailable = false
         var leaseClosed = false
+        var resolutionFails = false
+        var resolutionMode = "DIRECT_PLAY"
         var remote = YouTubeReceiver("lease", "READY", "123456")
         val receipts = ArrayList<ReceiverFeedback>()
         val stopped = ArrayList<String>()
@@ -34,7 +36,8 @@ class YouTubeReceptionViewModelTest {
                     positionMs: Int?,
                 ): PlaybackPlan {
                     assertEquals("lease", receiverId)
-                    return plan(itemId, positionMs ?: 0)
+                    if (resolutionFails) error("upstream unavailable")
+                    return plan(itemId, positionMs ?: 0).copy(mode = resolutionMode)
                 }
 
                 override fun progress(sessionId: String, progress: PlaybackProgress) {}
@@ -174,6 +177,7 @@ class YouTubeReceptionViewModelTest {
         assertTrue(f.played.isEmpty())
         assertTrue(f.stopped.contains("video"))
         assertNull(f.session.state.plan)
+        assertNull(f.reception.state.playbackIssue)
     }
 
     @Test
@@ -187,6 +191,7 @@ class YouTubeReceptionViewModelTest {
         assertTrue(f.played.isEmpty())
         assertTrue(f.reception.state.enabled)
         assertFalse(f.leaseClosed)
+        assertNull(f.reception.state.playbackIssue)
     }
 
     @Test
@@ -213,8 +218,41 @@ class YouTubeReceptionViewModelTest {
         f.reception.enable()
         f.command("play", "play")
         f.session.mediaState("FAILED", 0, 0)
+        assertEquals(YouTubePlaybackIssue.UNAVAILABLE, f.reception.state.playbackIssue)
+        assertEquals(1L, f.reception.state.playbackIssueRevision)
         f.reception.tick()
         assertTrue(f.receipts.any { it.commandId == "play" && !it.success })
+    }
+
+    @Test
+    fun failedResolutionReportsVisibleIssueAndNegativeFeedback() {
+        val f = Fixture()
+        f.resolutionFails = true
+        f.reception.enable()
+        f.command("first", "play")
+        assertEquals(YouTubePlaybackIssue.UNAVAILABLE, f.reception.state.playbackIssue)
+        assertEquals(1L, f.reception.state.playbackIssueRevision)
+        assertTrue(f.played.isEmpty())
+        f.reception.tick()
+        assertTrue(f.receipts.any { it.commandId == "first" && !it.success })
+
+        f.resolutionFails = false
+        f.command("second", "play")
+        assertNull(f.reception.state.playbackIssue)
+        assertEquals(listOf("video"), f.played)
+    }
+
+    @Test
+    fun externalPlanReportsItsOwnReasonWithoutStartingPlayer() {
+        val f = Fixture()
+        f.resolutionMode = "EXTERNAL_PLAYER"
+        f.reception.enable()
+        f.command("external", "play")
+        assertEquals(YouTubePlaybackIssue.EXTERNAL_PLAYER_REQUIRED, f.reception.state.playbackIssue)
+        assertEquals(listOf("video"), f.stopped)
+        assertTrue(f.played.isEmpty())
+        f.reception.tick()
+        assertTrue(f.receipts.any { it.commandId == "external" && !it.success })
     }
 
     @Test

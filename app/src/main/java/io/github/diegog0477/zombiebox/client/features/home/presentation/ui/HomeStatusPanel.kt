@@ -1,7 +1,6 @@
 package io.github.diegog0477.zombiebox.client.features.home.presentation.ui
 
 import android.content.Context
-import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
@@ -16,9 +15,7 @@ class HomeStatusPanel(context: Context, private val ui: TvWidgets) : LinearLayou
         setBackgroundDrawable(ui.box(ui.background, ui.panel))
         val heading = ui.row()
         heading.addView(
-            ui.text(context.getString(R.string.docked_mode), 18f).apply {
-                typeface = Typeface.DEFAULT_BOLD
-            },
+            ui.text(context.getString(R.string.docked_mode), 18f).apply { typeface = ui.bold },
             LayoutParams(0, -2, 1f),
         )
         heading.addView(
