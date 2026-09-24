@@ -53,6 +53,7 @@ class SettingsDialogs(
         path.forEach { entry ->
             when (entry.route) {
                 "settings" -> show()
+                "devices" -> devices()
                 "advanced" -> advanced()
                 "providers" -> providers(entry.selected, entry.selectedKey)
             }
@@ -83,6 +84,8 @@ class SettingsDialogs(
             setSingleLine(true)
             setTextColor(Color.WHITE)
             setHintTextColor(ui.muted)
+            setBackgroundDrawable(ui.box(ui.panel, ui.muted))
+            setPadding(ui.dp(12), 0, ui.dp(12), 0)
             inputType =
                 if (secret) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
@@ -191,6 +194,28 @@ class SettingsDialogs(
                     actions.resumePlayback()
                 }
                 12 -> actions.companionSettings()
+            }
+        }
+    }
+
+    fun devices() {
+        menus.show(
+            "devices",
+            R.string.devices,
+            arrayOf(
+                activity.getString(R.string.connect_gateway),
+                activity.getString(R.string.phone_pair_title),
+                activity.getString(R.string.youtube_receiver),
+                activity.getString(R.string.media_receiver),
+                activity.getString(R.string.receive_cast),
+            ),
+        ) { index ->
+            when (index) {
+                0 -> pairing()
+                1 -> actions.companionSettings()
+                2 -> actions.youtubeReceiverSettings()
+                3 -> actions.mediaReceiverSettings()
+                4 -> actions.receiverSettings()
             }
         }
     }

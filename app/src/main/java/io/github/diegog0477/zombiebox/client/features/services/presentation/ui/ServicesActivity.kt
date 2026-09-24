@@ -9,6 +9,7 @@ import android.os.Handler
 import android.text.InputType
 import android.widget.*
 import io.github.diegog0477.zombiebox.client.R
+import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
 import io.github.diegog0477.zombiebox.client.features.services.data.GatewayServicesRepository
 import io.github.diegog0477.zombiebox.client.features.services.presentation.viewmodel.ServicesViewModel
 import io.github.diegog0477.zombiebox.shared.GatewayApi
@@ -16,6 +17,7 @@ import java.util.concurrent.Executors
 
 /** Views own focus and rendering; semantic data and work stay behind MVVM. */
 class ServicesActivity : Activity() {
+    private val ui by lazy { TvWidgets(this) }
     private val api = GatewayApi()
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler()
@@ -89,6 +91,8 @@ class ServicesActivity : Activity() {
                 setHint(R.string.operator_code)
                 setHintTextColor(Color.LTGRAY)
                 setTextColor(Color.WHITE)
+                setBackgroundDrawable(ui.box(ui.panel, ui.muted))
+                setPadding(ui.dp(12), 0, ui.dp(12), 0)
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                 setSingleLine(true)
                 isSaveEnabled = false

@@ -2,6 +2,7 @@ package io.github.diegog0477.zombiebox.client.features.catalog.presentation.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.graphics.Color
 import android.widget.*
 import io.github.diegog0477.zombiebox.client.R
 import io.github.diegog0477.zombiebox.client.core.model.MediaItem
@@ -247,6 +248,31 @@ class CatalogDialogs(
         load { model.open(provider, query(), ::showPage, ::loadFailed) }
     }
 
+    fun promptProviderSearch(provider: String) {
+        val input =
+            EditText(activity).apply {
+                setSingleLine(true)
+                setTextColor(Color.WHITE)
+                setHintTextColor(ui.muted)
+                setBackgroundDrawable(ui.box(ui.panel, ui.muted))
+                setPadding(ui.dp(12), 0, ui.dp(12), 0)
+                filters = arrayOf(android.text.InputFilter.LengthFilter(100))
+                setHint(R.string.search_all_hint)
+            }
+        AlertDialog.Builder(activity)
+            .setTitle(activity.getString(R.string.search_provider, ui.serviceTitle(provider)))
+            .setView(input)
+            .setPositiveButton(R.string.search) { _, _ ->
+                val phrase = input.text.toString().trim()
+                if (phrase.length >= 2) {
+                    searchOrigin = false
+                    load { model.open(provider, phrase, ::showPage, ::loadFailed) }
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
     private fun load(work: () -> Unit) {
         browser?.dismiss()
         browser =
@@ -439,6 +465,10 @@ class CatalogDialogs(
         val input =
             EditText(activity).apply {
                 setSingleLine(true)
+                setTextColor(Color.WHITE)
+                setHintTextColor(ui.muted)
+                setBackgroundDrawable(ui.box(ui.panel, ui.muted))
+                setPadding(ui.dp(12), 0, ui.dp(12), 0)
                 setText(draft)
             }
         overlayCapture = { CatalogOverlay("provider_search", input.text.toString()) }

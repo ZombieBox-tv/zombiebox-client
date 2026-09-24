@@ -4,6 +4,8 @@
     <string name="tagline">VIEJOS DISPOSITIVOS. NUEVAS HISTORIAS.</string>
     <string name="home">Inicio</string>
     <string name="search">Buscar</string>
+    <string name="search_provider">Buscar en %1$s</string>
+    <string name="devices">Dispositivos</string>
     <string name="settings">Configuración</string>
     <string name="play">Reproducir</string>
     <string name="play_pause">Reproducir / Pausar</string>

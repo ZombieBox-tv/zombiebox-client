@@ -26,6 +26,10 @@ class SearchDialog(private val activity: Activity, private val model: SearchView
         val input =
             EditText(activity).apply {
                 setSingleLine(true)
+                setTextColor(android.graphics.Color.WHITE)
+                setHintTextColor(ui.muted)
+                setBackgroundDrawable(ui.box(ui.panel, ui.muted))
+                setPadding(ui.dp(12), 0, ui.dp(12), 0)
                 filters = arrayOf(android.text.InputFilter.LengthFilter(100))
                 setText(draft)
                 setHint(R.string.search_all_hint)
@@ -93,7 +97,8 @@ class SearchDialog(private val activity: Activity, private val model: SearchView
                 )
                 addState(intArrayOf(), ui.box(android.graphics.Color.TRANSPARENT))
             }
-        list.setDrawSelectorOnTop(true)
+        // The focused row must remain readable on legacy ListView implementations.
+        list.setDrawSelectorOnTop(false)
         val content =
             ui.column().apply {
                 setPadding(ui.dp(12), ui.dp(8), ui.dp(12), ui.dp(8))

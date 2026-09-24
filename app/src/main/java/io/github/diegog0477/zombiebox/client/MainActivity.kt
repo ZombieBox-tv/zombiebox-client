@@ -89,7 +89,13 @@ class MainActivity : Activity() {
         if (artworkScope != scope) artworkDecoder.clear()
         artworkScope = scope
         imageWorker.queue.clear()
-        content.render(snapshot, homeViewModel.state.scope, isTV(), bottom, full)
+        content.render(
+            snapshot,
+            homeViewModel.state.scope,
+            isTV(),
+            bottom,
+            full && session.isNotEmpty(),
+        )
         content.status(homeViewModel.state.loading, homeViewModel.state.failure != null)
     }
 
@@ -239,6 +245,8 @@ class MainActivity : Activity() {
 
     private fun search() = catalogDialogs.search()
 
+    private fun searchProvider(provider: String) = catalogDialogs.promptProviderSearch(provider)
+
     private fun catalogPage(provider: String) = catalogDialogs.page(provider)
 
     private fun details(item: MediaItem) = catalogDialogs.details(item)
@@ -343,7 +351,7 @@ class MainActivity : Activity() {
         restoreFullscreen =
             if (state?.containsKey("playbackFullscreen") == true)
                 state.getBoolean("playbackFullscreen")
-            else true
+            else false
         val language = prefs.getString("language", "en") ?: "en"
         val config = Configuration(resources.configuration)
         config.locale = Locale(language)
@@ -370,6 +378,8 @@ class MainActivity : Activity() {
                     details = { item -> details(item) },
                     settings = { settings() },
                     search = { search() },
+                    searchProvider = { provider -> searchProvider(provider) },
+                    devices = { settingsDialogs.devices() },
                     youtubeReceiver = { youtubeReceiverSettings() },
                     catalog = { provider -> catalogPage(provider) },
                     mirrorReceiver = { receiverSettings() },
@@ -1265,7 +1275,10 @@ class MainActivity : Activity() {
         if (currentFocus !is EditText) {
             if (
                 event.action == KeyEvent.ACTION_DOWN &&
-                    (if (full) playerFocus else homeFocus).move(key, currentFocus)
+                    (if (full && session.isNotEmpty()) playerFocus else homeFocus).move(
+                        key,
+                        currentFocus,
+                    )
             )
                 return true
             // Preserve native CENTER/ENTER activation; gamepad A follows the same key-up contract.

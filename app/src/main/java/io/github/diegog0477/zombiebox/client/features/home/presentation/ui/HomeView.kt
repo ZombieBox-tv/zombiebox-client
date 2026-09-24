@@ -26,6 +26,8 @@ data class HomeActions(
     val details: (MediaItem) -> Unit,
     val settings: () -> Unit,
     val search: () -> Unit,
+    val searchProvider: (String) -> Unit,
+    val devices: () -> Unit,
     val youtubeReceiver: () -> Unit,
     val catalog: (String) -> Unit,
     val mirrorReceiver: () -> Unit,
@@ -136,6 +138,7 @@ class HomeView(
             navigation[id] = tab
             nav.addView(tab)
         }
+        nav.addView(ui.action(context.getString(R.string.devices), ui.green, actions.devices))
         nav.addView(headerAction(R.string.search, false, actions.search))
         nav.addView(headerAction(R.string.settings, true, actions.settings))
         val heroFrame = FrameLayout(context).apply { minimumHeight = ui.dp(240) }
@@ -144,7 +147,7 @@ class HomeView(
         hero.setBackgroundDrawable(
             GradientDrawable(
                     GradientDrawable.Orientation.LEFT_RIGHT,
-                    intArrayOf(Color.rgb(20, 39, 31), Color.rgb(25, 41, 44), ui.background),
+                    intArrayOf(Color.rgb(12, 27, 24), Color.rgb(14, 25, 27), ui.background),
                 )
                 .apply { cornerRadius = ui.dp(10).toFloat() }
         )
@@ -201,8 +204,21 @@ class HomeView(
                 )
             heroActions.addView(ui.button(R.string.more_info) { actions.details(featured) })
         } else heroActions.addView(ui.button(R.string.configure_services) { actions.settings() })
-        if (scope.provider == "youtube")
+        if (scope.provider == "youtube") {
+            heroActions.addView(
+                ui.action(
+                    context.getString(
+                        R.string.search_provider,
+                        context.getString(R.string.youtube),
+                    ),
+                    ui.providerAccent("youtube"),
+                ) {
+                    actions.searchProvider("youtube")
+                }
+            )
+            heroActions.addView(ui.button(R.string.view_all) { actions.catalog("youtube") })
             heroActions.addView(ui.button(R.string.youtube_receiver) { actions.youtubeReceiver() })
+        }
         focusRows.add(Pair("hero", heroActions))
         hero.addView(heroActions)
         heroStatus = ui.text("", 12f, ui.muted).apply { visibility = GONE }
@@ -379,11 +395,24 @@ class HomeView(
                     setPadding(ui.dp(12), ui.dp(6), ui.dp(12), ui.dp(6))
                     setBackgroundDrawable(ui.focusBackground(ui.providerAccent(id)))
                     addView(
-                        ui.text(ui.serviceTitle(id), 19f, ui.providerAccent(id)).apply {
-                            typeface = Typeface.DEFAULT_BOLD
+                        ui.row().apply {
+                            addView(
+                                ServiceMarkView(context, id, ui.providerAccent(id)),
+                                LinearLayout.LayoutParams(ui.dp(38), ui.dp(38)),
+                            )
+                            addView(
+                                ui.column().apply {
+                                    addView(
+                                        ui.text(ui.serviceTitle(id), 16f).apply {
+                                            typeface = Typeface.DEFAULT_BOLD
+                                            setSingleLine(true)
+                                        }
+                                    )
+                                    addView(ui.text(ui.localizedState(module.state), 11f, ui.muted))
+                                }
+                            )
                         }
                     )
-                    addView(ui.text(ui.localizedState(module.state), 12f, ui.muted))
                     setOnClickListener {
                         if (id == "android_mirror") actions.mirrorReceiver()
                         else if (module.state == "DISABLED") actions.providers()

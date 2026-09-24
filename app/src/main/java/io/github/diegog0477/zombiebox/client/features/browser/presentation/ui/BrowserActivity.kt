@@ -12,12 +12,14 @@ import android.widget.*
 import io.github.diegog0477.zombiebox.client.R
 import io.github.diegog0477.zombiebox.client.core.platform.WindowInsetsPolicy
 import io.github.diegog0477.zombiebox.client.core.ui.RemoteFocus
+import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
 import io.github.diegog0477.zombiebox.client.features.browser.data.GatewayBrowserRepository
 import io.github.diegog0477.zombiebox.client.features.browser.presentation.viewmodel.BrowserViewModel
 import io.github.diegog0477.zombiebox.shared.GatewayApi
 import java.util.concurrent.Executors
 
 class BrowserActivity : Activity() {
+    private val ui by lazy { TvWidgets(this) }
     private val api = GatewayApi()
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler()
@@ -61,6 +63,8 @@ class BrowserActivity : Activity() {
                 setHint(R.string.browser_address)
                 setTextColor(Color.WHITE)
                 setHintTextColor(Color.LTGRAY)
+                setBackgroundDrawable(ui.box(ui.panel, ui.muted))
+                setPadding(ui.dp(12), 0, ui.dp(12), 0)
                 setSingleLine(true)
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             }
@@ -159,6 +163,8 @@ class BrowserActivity : Activity() {
                 setHint(R.string.browser_text)
                 setTextColor(Color.WHITE)
                 setHintTextColor(Color.LTGRAY)
+                setBackgroundDrawable(ui.box(ui.panel, ui.muted))
+                setPadding(ui.dp(12), 0, ui.dp(12), 0)
                 setSingleLine(true)
                 isSaveEnabled = false
             }

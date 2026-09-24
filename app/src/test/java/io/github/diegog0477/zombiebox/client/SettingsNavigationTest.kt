@@ -6,6 +6,15 @@ import org.junit.Test
 
 class SettingsNavigationTest {
     @Test
+    fun devicesIsAnIndependentRootAndRestorable() {
+        val model = SettingsNavigation()
+        model.open("settings")
+        model.open("devices")
+        assertEquals(listOf(SettingsNavigation.Menu("devices")), model.path)
+        assertEquals(model.path, model.sanitize(model.path))
+    }
+
+    @Test
     fun nestedBackPreservesTheParentSelection() {
         val model = SettingsNavigation()
         model.open("settings")
