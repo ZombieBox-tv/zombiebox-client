@@ -6,6 +6,16 @@ import org.junit.Test
 
 class PlaybackIntentTest {
     @Test
+    fun replacementKeepsAutoplayDuringBufferingButHonorsExplicitPause() {
+        assertTrue(PlaybackIntent.replacementAutoplay("PLAYING", null))
+        assertTrue(PlaybackIntent.replacementAutoplay("BUFFERING", null))
+        assertFalse(PlaybackIntent.replacementAutoplay("PAUSED", null))
+        assertFalse(PlaybackIntent.replacementAutoplay("ENDED", null))
+        assertFalse(PlaybackIntent.replacementAutoplay("BUFFERING", false))
+        assertTrue(PlaybackIntent.replacementAutoplay("PAUSED", true))
+    }
+
+    @Test
     fun serviceBackgroundPlaybackPreservesExplicitPauseAndWaitsForReturningVideoSurface() {
         val intent = PlaybackIntent()
         intent.backgroundPlayback = true

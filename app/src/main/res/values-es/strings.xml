@@ -122,6 +122,14 @@
         Escribe una dirección HTTP(S) del gateway sin credenciales.
     </string>
     <string name="diagnostics">Diagnóstico del dispositivo</string>
+    <string name="diagnostics_actions">PRUEBAS E INFORMES</string>
+    <string name="diagnostics_overview">Resumen del hardware</string>
+    <string name="diagnostics_inventory_hint">Modos de pantalla y códecs disponibles</string>
+    <string name="diagnostics_export_hint">Ver y compartir el informe del gateway</string>
+    <string name="diagnostics_probes_hint">
+        Comprobar la reproducción real en este dispositivo
+    </string>
+    <string name="diagnostics_rescan_hint">Actualizar capacidades y estado de red</string>
     <string name="language">Idioma</string>
     <string name="presentation_mode">Modo de presentación</string>
     <string name="close">Cerrar</string>
@@ -289,6 +297,13 @@
     <string name="provider_service_auth_required">
         Este servicio necesita autorización. Abre Servicios para conectar su cuenta o credenciales.
     </string>
+    <string name="provider_service_needs_setup">
+        Este servicio no está configurado. Abre Servicios para configurarlo.
+    </string>
+    <string name="iptv_needs_setup">
+        No hay una lista configurada. Abre Servicios para agregar una URL de lista M3U.
+    </string>
+    <string name="needs_setup">Requiere configuración</string>
     <string name="provider_service_waiting">
         Esperando el estado del servicio desde el gateway…
     </string>
@@ -323,6 +338,10 @@
     <string name="browser_text">Texto para el campo seleccionado</string>
     <string name="browser_type">Escribir</string>
     <string name="run_probes">Ejecutar pruebas multimedia</string>
+    <string name="player_timeline_position">
+        Línea de tiempo: %1$s de %2$s. Izquierda o derecha para avanzar o retroceder.
+    </string>
+    <string name="player_timeline_unavailable">Línea de tiempo no disponible</string>
     <string name="probe_description">
         Reproduce clips sintéticos sin sonido, uno a la vez. Los resultados se guardan en el
         gateway. Repite después de actualizar el sistema; confirma visualmente los resultados.

@@ -1,5 +1,6 @@
 package io.github.diegog0477.zombiebox.client
 
+import io.github.diegog0477.zombiebox.client.core.ui.FocusModel
 import io.github.diegog0477.zombiebox.client.features.catalog.presentation.ui.CatalogUiPolicy
 import org.junit.Assert.*
 import org.junit.Test
@@ -161,5 +162,45 @@ class CatalogUiPolicyTest {
                 canBack = false,
             ),
         )
+    }
+
+    @Test
+    fun needsSetupAndConfigurationAffordances() {
+        assertTrue(CatalogUiPolicy.needsSetup("NEEDS_SETUP"))
+        assertTrue(CatalogUiPolicy.needsSetup("UNCONFIGURED"))
+        assertFalse(CatalogUiPolicy.needsSetup("READY"))
+        assertFalse(CatalogUiPolicy.needsSetup("HEALTHY"))
+        assertFalse(CatalogUiPolicy.needsSetup("DISABLED"))
+        assertFalse(CatalogUiPolicy.needsSetup("DEGRADED"))
+        assertFalse(CatalogUiPolicy.needsSetup(null))
+
+        assertTrue(CatalogUiPolicy.canConfigure("DISABLED"))
+        assertTrue(CatalogUiPolicy.canConfigure("AUTH_REQUIRED"))
+        assertTrue(CatalogUiPolicy.canConfigure("NEEDS_SETUP"))
+        assertTrue(CatalogUiPolicy.canConfigure("UNCONFIGURED"))
+        assertFalse(CatalogUiPolicy.canConfigure("HEALTHY"))
+        assertFalse(CatalogUiPolicy.canConfigure("READY"))
+        assertFalse(CatalogUiPolicy.canConfigure("DEGRADED"))
+        assertFalse(CatalogUiPolicy.canConfigure(null))
+
+        // When unconfigured, IPTV cannot browse library
+        assertFalse(CatalogUiPolicy.isReady("NEEDS_SETUP"))
+        assertFalse(CatalogUiPolicy.isReady("UNCONFIGURED"))
+        assertFalse(CatalogUiPolicy.canBrowseLibrary("iptv", "NEEDS_SETUP"))
+        assertFalse(CatalogUiPolicy.canBrowseLibrary("iptv", "UNCONFIGURED"))
+    }
+
+    @Test
+    fun iptvEmptyStateFocusRowIsNavigable() {
+        val model = FocusModel()
+        model.rebuild(
+            listOf(
+                FocusModel.Row("nav", listOf("home", "iptv")),
+                FocusModel.Row("iptv:empty", listOf("iptv:empty:settings")),
+            )
+        )
+        model.select("iptv")
+        assertEquals("iptv", model.selected)
+        assertEquals("iptv:empty:settings", model.move(0, 1))
     }
 }

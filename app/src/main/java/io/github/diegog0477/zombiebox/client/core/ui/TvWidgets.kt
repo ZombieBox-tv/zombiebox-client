@@ -237,6 +237,8 @@ class TvWidgets(
                 "PAUSED" -> R.string.paused
                 "ENDED" -> R.string.ended
                 "STOPPED" -> R.string.stopped
+                "NEEDS_SETUP",
+                "UNCONFIGURED" -> R.string.needs_setup
                 else -> R.string.unavailable
             }
         )

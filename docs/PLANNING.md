@@ -1,5 +1,16 @@
 # zombiebox-client: component work
 
+## dev.54 TV controls, diagnostics and IPTV setup
+
+The YouTube player starts with its recommendation rail hidden. D-pad Down
+opens the rail and details, Up returns to the controls, and a focusable timeline
+supports short left/right seeks; Back still hides the chrome. Preserve the
+optimistic play state while a manual quality change buffers. Replace legacy
+diagnostics dialogs with dark D-pad TV pages. Show a localized M3U setup action
+when IPTV has no configured playlist. JVM tests, lint and source build pass;
+the selected Vizio still needs visual/focus and media QA. APK versionCode 54;
+no product milestone closes.
+
 ## dev.53 probe clock and related retry
 
 Use gateway time for newly measured playback probes on devices with incorrect

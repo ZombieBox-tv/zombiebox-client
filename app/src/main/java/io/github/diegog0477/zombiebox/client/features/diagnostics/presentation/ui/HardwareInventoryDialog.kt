@@ -1,28 +1,34 @@
 package io.github.diegog0477.zombiebox.client.features.diagnostics.presentation.ui
 
 import android.app.Activity
-import android.app.AlertDialog
+import android.graphics.Color
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import io.github.diegog0477.zombiebox.client.R
+import io.github.diegog0477.zombiebox.client.core.ui.TvTypography
+import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.model.HardwareReport
 
+/** The inventory is rendered inside the diagnostics page, without a nested system dialog. */
 class HardwareInventoryDialog(private val activity: Activity) {
-    fun show(report: HardwareReport) {
+    fun content(report: HardwareReport): LinearLayout {
+        val ui = TvWidgets(activity)
         fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
         val content =
             LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(24), dp(16), dp(24), dp(16))
+                setPadding(dp(8), dp(4), dp(8), dp(16))
             }
         fun label(text: String, heading: Boolean = false) {
             content.addView(
                 TextView(activity).apply {
                     this.text = text
-                    textSize = if (heading) 19f else 15f
-                    setPadding(0, dp(12), 0, dp(12))
-                    if (heading) setTextColor(activity.resources.getColor(R.color.accent_zombie))
+                    textSize = if (heading) 18f else 15f
+                    typeface =
+                        if (heading) TvTypography.semibold(activity)
+                        else TvTypography.regular(activity)
+                    setTextColor(if (heading) ui.green else Color.WHITE)
+                    setPadding(0, dp(if (heading) 18 else 9), 0, dp(if (heading) 6 else 9))
                 }
             )
         }
@@ -82,15 +88,6 @@ class HardwareInventoryDialog(private val activity: Activity) {
                 )
             }
         }
-        AlertDialog.Builder(activity)
-            .setTitle(R.string.inventory_title)
-            .setView(
-                ScrollView(activity).apply {
-                    addView(content)
-                    isFocusable = true
-                }
-            )
-            .setPositiveButton(R.string.close, null)
-            .show()
+        return content
     }
 }

@@ -59,6 +59,7 @@ import io.github.diegog0477.zombiebox.client.features.playback.domain.model.Play
 import io.github.diegog0477.zombiebox.client.features.playback.domain.model.PlaybackProgress
 import io.github.diegog0477.zombiebox.client.features.playback.domain.model.PlaybackSession
 import io.github.diegog0477.zombiebox.client.features.playback.domain.model.QueueCursor
+import io.github.diegog0477.zombiebox.client.features.playback.domain.policy.PlaybackIntent
 import io.github.diegog0477.zombiebox.client.features.playback.platform.AudioFocusController
 import io.github.diegog0477.zombiebox.client.features.playback.platform.PlaybackConnection
 import io.github.diegog0477.zombiebox.client.features.playback.platform.PlaybackNotifications
@@ -481,7 +482,9 @@ class MainActivity : Activity() {
                         ui.formatTime(lastDuration),
                     )
                 if (::playerChrome.isInitialized) {
-                    playerChrome.updateProgress(status, lastPosition, lastDuration)
+                    if (playerChrome.updateProgress(status, lastPosition, lastDuration)) {
+                        playerFocus.rebuild(playerChrome.focusRows(), false)
+                    }
                 }
                 content.updatePlaybackProgress(status, lastPosition, lastDuration)
                 if (
@@ -1030,7 +1033,12 @@ class MainActivity : Activity() {
                     playPause = { togglePlayback() },
                     next = { player.next() },
                     seekForward = { seek(10000) },
-                    description = { playerChrome.focusDetails() },
+                    description = {
+                        if (playerChrome.focusDetails()) {
+                            playerFocus.remember("player:details")
+                            playerFocus.rebuild(playerChrome.focusRows(), true)
+                        }
+                    },
                     quality = { showQuality() },
                     audioTracks = { showTracks("audio") },
                     subtitles = { showTracks("subtitle") },
@@ -1152,7 +1160,11 @@ class MainActivity : Activity() {
                             selectedId.isNotEmpty() &&
                             selectedId != inventory.selectedId
                     ) {
-                        val paused = lastState != "PLAYING"
+                        val paused =
+                            !PlaybackIntent.replacementAutoplay(
+                                lastState,
+                                playerChrome.optimisticPlaying(),
+                            )
                         val incoming =
                             youtubeIncoming || receiverViewModel.activeSession == requestedSession
                         qualityModel.select(
@@ -1759,17 +1771,44 @@ class MainActivity : Activity() {
                         ) {
                             if (playerChrome.detailsView.arrowScroll(View.FOCUS_DOWN)) return true
                         }
+                        if (playerChrome.isChromeVisible && currentItem?.kind != "audio") {
+                            if (playerChrome.isTimelineFocused(currentFocus)) {
+                                if (
+                                    key == KeyEvent.KEYCODE_DPAD_LEFT ||
+                                        key == KeyEvent.KEYCODE_DPAD_RIGHT
+                                ) {
+                                    seek(if (key == KeyEvent.KEYCODE_DPAD_LEFT) -10000 else 10000)
+                                    return true
+                                }
+                            }
+                            if (
+                                key == KeyEvent.KEYCODE_DPAD_DOWN &&
+                                    playerChrome.isControlFocused(currentFocus)
+                            ) {
+                                val target = playerChrome.expandLowerPanelFrom(currentFocus)
+                                if (target != null) {
+                                    playerFocus.remember(target)
+                                    playerFocus.rebuild(playerChrome.focusRows(), true)
+                                    return true
+                                }
+                            }
+                            if (
+                                key == KeyEvent.KEYCODE_DPAD_UP &&
+                                    (playerChrome.isRelatedFocused(currentFocus) ||
+                                        (playerChrome.isDetailsFocused(currentFocus) &&
+                                            !playerChrome.hasRelatedItems()))
+                            ) {
+                                val target = playerChrome.collapseLowerPanel()
+                                if (target != null) {
+                                    playerFocus.remember(target)
+                                    playerFocus.rebuild(playerChrome.focusRows(), true)
+                                    return true
+                                }
+                            }
+                        }
                     }
                     if (playerFocus.move(key, currentFocus)) {
-                        return true
-                    }
-                    if (
-                        ::playerChrome.isInitialized &&
-                            key == KeyEvent.KEYCODE_DPAD_UP &&
-                            playerChrome.isChromeVisible &&
-                            currentItem?.kind != "audio"
-                    ) {
-                        playerChrome.hideChrome()
+                        playerChrome.resetInactivityTimer()
                         return true
                     }
                 }

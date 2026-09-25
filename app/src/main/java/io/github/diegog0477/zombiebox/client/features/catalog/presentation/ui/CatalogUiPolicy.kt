@@ -38,6 +38,12 @@ object CatalogUiPolicy {
     fun isReady(serviceState: String?): Boolean =
         serviceState == "READY" || serviceState == "HEALTHY"
 
+    fun needsSetup(serviceState: String?): Boolean =
+        serviceState == "NEEDS_SETUP" || serviceState == "UNCONFIGURED"
+
+    fun canConfigure(serviceState: String?): Boolean =
+        serviceState == "DISABLED" || serviceState == "AUTH_REQUIRED" || needsSetup(serviceState)
+
     fun canBrowseLibrary(provider: String?, serviceState: String?): Boolean =
         isReady(serviceState) && supportsCatalog(provider)
 

@@ -3,6 +3,7 @@ package io.github.diegog0477.zombiebox.client.features.playback.presentation.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.text.TextUtils
@@ -71,6 +72,10 @@ class TvPlayerChromeView(
     private var isPlaying = false
     private var optimisticTargetPlaying: Boolean? = null
     private var optimisticTimestamp = 0L
+    private val lowerPanel = PlayerChromeSections()
+    private var returnControlKey = "player:play_pause"
+    private var videoSeekable = false
+    private var videoDurationMs = 0
 
     var isChromeVisible = true
         private set
@@ -89,6 +94,7 @@ class TvPlayerChromeView(
     private val bottomScrim: LinearLayout
     private val videoTimeText: TextView
     private val videoDurationText: TextView
+    private val videoTimelineRow: LinearLayout
     private val videoProgressBar: TvPlaybackProgressBar
     val videoControlsRow: LinearLayout
     val videoSeekBackButton: ImageButton
@@ -209,7 +215,7 @@ class TvPlayerChromeView(
             }
 
         // Timeline Row
-        val timelineRow =
+        videoTimelineRow =
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -221,15 +227,20 @@ class TvPlayerChromeView(
                 setTextColor(Color.WHITE)
                 setShadowLayer(2f, 1f, 1f, Color.BLACK)
             }
-        timelineRow.addView(videoTimeText, LinearLayout.LayoutParams(-2, -2))
+        videoTimelineRow.addView(videoTimeText, LinearLayout.LayoutParams(-2, -2))
 
         videoProgressBar =
             TvPlaybackProgressBar(context).apply {
                 accentColor = this@TvPlayerChromeView.accentColor
+                tag = "player:timeline"
+                contentDescription = context.getString(R.string.player_timeline_unavailable)
+                focusChanged = { focused ->
+                    if (focused) removeCallbacks(inactivityRunnable) else resetInactivityTimer()
+                }
             }
-        timelineRow.addView(
+        videoTimelineRow.addView(
             videoProgressBar,
-            LinearLayout.LayoutParams(0, ui.dp(4), 1f).apply {
+            LinearLayout.LayoutParams(0, ui.dp(32), 1f).apply {
                 leftMargin = ui.dp(12)
                 rightMargin = ui.dp(12)
             },
@@ -242,8 +253,8 @@ class TvPlayerChromeView(
                 setTextColor(ui.muted)
                 setShadowLayer(2f, 1f, 1f, Color.BLACK)
             }
-        timelineRow.addView(videoDurationText, LinearLayout.LayoutParams(-2, -2))
-        bottomScrim.addView(timelineRow)
+        videoTimelineRow.addView(videoDurationText, LinearLayout.LayoutParams(-2, -2))
+        bottomScrim.addView(videoTimelineRow)
 
         // Video Universal Controls Row
         val controlsScroll =
@@ -798,7 +809,13 @@ class TvPlayerChromeView(
 
     fun resetInactivityTimer(delayMs: Long = 4500L) {
         removeCallbacks(inactivityRunnable)
-        if (isPlaying && isChromeVisible && !isAudioMode) {
+        if (
+            isPlaying &&
+                isChromeVisible &&
+                !isAudioMode &&
+                !lowerPanel.expanded &&
+                !videoProgressBar.isFocused
+        ) {
             postDelayed(inactivityRunnable, delayMs)
         }
     }
@@ -814,6 +831,8 @@ class TvPlayerChromeView(
     fun hideChrome() {
         if (isAudioMode) return
         removeCallbacks(inactivityRunnable)
+        lowerPanel.collapse()
+        applyLowerPanelVisibility()
         isChromeVisible = false
         topScrim.visibility = GONE
         bottomScrim.visibility = GONE
@@ -830,9 +849,12 @@ class TvPlayerChromeView(
         relatedItems: List<MediaItem>,
         hasMoreRelated: Boolean = false,
     ) {
+        val sameVideo = !isAudio && !isAudioMode && currentItem?.id == item?.id
         currentItem = item
         isAudioMode = isAudio
         accentColor = accent
+        videoSeekable = seekable
+        updateTimelineAvailability()
 
         val provider = item?.provider ?: ""
         val title =
@@ -847,6 +869,7 @@ class TvPlayerChromeView(
         refreshButtonStyles()
 
         if (isAudio) {
+            lowerPanel.bind(item?.id, related = false, details = false)
             removeCallbacks(inactivityRunnable)
             isChromeVisible = true
             videoOverlay.visibility = GONE
@@ -884,7 +907,7 @@ class TvPlayerChromeView(
         } else {
             audioOverlay.visibility = GONE
             videoOverlay.visibility = VISIBLE
-            showChrome()
+            if (!sameVideo) showChrome()
 
             videoTitleText.text = title
             videoSubtitleText.text = subtitle
@@ -899,17 +922,15 @@ class TvPlayerChromeView(
             // Details section (channel, title, description) when semantic metadata exists
             val hasDesc = !item?.description.isNullOrEmpty()
             val hasChannel = !item?.subtitle.isNullOrEmpty()
-            if (hasDesc || hasChannel) {
+            if (hasDesc) {
                 detailsTitleText.text = title
                 detailsChannelText.text = subtitle
                 detailsChannelText.setTextColor(accent)
                 detailsChannelText.visibility = if (hasChannel) VISIBLE else GONE
                 detailsDescriptionText.text = item.description
                 detailsScrollView.visibility = if (hasDesc) VISIBLE else GONE
-                detailsSection.visibility = VISIBLE
                 videoDescriptionButton.visibility = VISIBLE
             } else {
-                detailsSection.visibility = GONE
                 videoDescriptionButton.visibility = GONE
             }
 
@@ -919,12 +940,52 @@ class TvPlayerChromeView(
             // Related videos rail (YouTube)
             if (provider == "youtube" && relatedItems.isNotEmpty()) {
                 setRelatedItems(relatedItems, hasMoreRelated)
-                relatedSection.visibility = VISIBLE
             } else {
-                relatedSection.visibility = GONE
                 relatedCardsRow.removeAllViews()
             }
+            lowerPanel.bind(
+                item?.id,
+                related = provider == "youtube" && relatedCardsRow.childCount > 0,
+                details = hasDesc,
+            )
+            applyLowerPanelVisibility()
+            resetInactivityTimer()
         }
+    }
+
+    private fun applyLowerPanelVisibility() {
+        relatedSection.visibility =
+            if (lowerPanel.expanded && lowerPanel.relatedAvailable) VISIBLE else GONE
+        detailsSection.visibility =
+            if (lowerPanel.expanded && lowerPanel.detailsAvailable) VISIBLE else GONE
+    }
+
+    fun isControlFocused(view: View?): Boolean = view?.parent === videoControlsRow
+
+    fun isRelatedFocused(view: View?): Boolean = view?.parent === relatedCardsRow
+
+    fun isDetailsFocused(view: View?): Boolean = view === detailsScrollView
+
+    fun isTimelineFocused(view: View?): Boolean = view === videoProgressBar
+
+    /** Returns the semantic focus key after expanding the lower panel, if content exists. */
+    fun expandLowerPanelFrom(control: View?): String? {
+        if (!lowerPanel.expand()) return null
+        returnControlKey =
+            if (isControlFocused(control)) control?.tag as? String ?: "player:play_pause"
+            else "player:play_pause"
+        applyLowerPanelVisibility()
+        resetInactivityTimer()
+        return if (lowerPanel.relatedAvailable) relatedCardsRow.getChildAt(0)?.tag as? String
+        else detailsScrollView.tag as? String
+    }
+
+    /** Returns the control that opened the lower panel for deterministic focus restoration. */
+    fun collapseLowerPanel(): String? {
+        if (!lowerPanel.collapse()) return null
+        applyLowerPanelVisibility()
+        resetInactivityTimer()
+        return returnControlKey
     }
 
     fun setRelatedItems(items: List<MediaItem>, hasMore: Boolean = false) {
@@ -955,30 +1016,37 @@ class TvPlayerChromeView(
 
         for (item in items) {
             val card =
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    isFocusable = true
-                    isClickable = true
-                    setBackgroundDrawable(cardFocusBackground(accentColor))
-                    setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(6))
-                    tag = "related:${item.id}"
-                    setOnClickListener {
-                        resetInactivityTimer()
-                        actions.playItem(item)
-                    }
-                    setOnFocusChangeListener { _, focused ->
-                        if (focused) {
-                            resetInactivityTimer()
-                            val total = relatedCardsRow.childCount
-                            val currentPos = relatedCardsRow.indexOfChild(this)
-                            if (currentPos >= total - 2) {
-                                actions.loadMoreRelated?.invoke()
+                object : LinearLayout(context) {
+                        override fun onFocusChanged(
+                            gainFocus: Boolean,
+                            direction: Int,
+                            previouslyFocusedRect: Rect?,
+                        ) {
+                            super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+                            if (gainFocus) {
+                                resetInactivityTimer()
+                                val total = relatedCardsRow.childCount
+                                val currentPos = relatedCardsRow.indexOfChild(this)
+                                if (currentPos >= total - 2) actions.loadMoreRelated?.invoke()
                             }
                         }
                     }
-                    layoutParams =
-                        LinearLayout.LayoutParams(cardWidth, -2).apply { rightMargin = ui.dp(10) }
-                }
+                    .apply {
+                        orientation = LinearLayout.VERTICAL
+                        isFocusable = true
+                        isClickable = true
+                        setBackgroundDrawable(cardFocusBackground(accentColor))
+                        setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(6))
+                        tag = "related:${item.id}"
+                        setOnClickListener {
+                            resetInactivityTimer()
+                            actions.playItem(item)
+                        }
+                        layoutParams =
+                            LinearLayout.LayoutParams(cardWidth, -2).apply {
+                                rightMargin = ui.dp(10)
+                            }
+                    }
 
             val thumbContainer =
                 FrameLayout(context).apply { setBackgroundDrawable(ui.box(Color.rgb(18, 24, 26))) }
@@ -1038,14 +1106,20 @@ class TvPlayerChromeView(
         audioStopButton.setBackgroundDrawable(controlBackground(accentColor))
     }
 
-    fun updateProgress(status: String, positionMs: Int, durationMs: Int) {
+    fun updateProgress(status: String, positionMs: Int, durationMs: Int): Boolean {
         val wasPlaying = isPlaying
+        videoDurationMs = durationMs
+        val timelineFocusChanged = updateTimelineAvailability()
         val timeLabel = ui.formatTime(positionMs)
         val durationLabel = if (durationMs > 0) ui.formatTime(durationMs) else ""
 
         videoTimeText.text = timeLabel
         videoDurationText.text = durationLabel
         videoProgressBar.setProgress(positionMs, durationMs)
+        videoProgressBar.contentDescription =
+            if (videoProgressBar.isFocusable)
+                context.getString(R.string.player_timeline_position, timeLabel, durationLabel)
+            else context.getString(R.string.player_timeline_unavailable)
 
         audioTimeText.text = timeLabel
         audioDurationText.text = durationLabel
@@ -1087,9 +1161,20 @@ class TvPlayerChromeView(
                 }
             }
         }
+        return timelineFocusChanged
+    }
+
+    private fun updateTimelineAvailability(): Boolean {
+        val enabled = videoSeekable && videoDurationMs > 0
+        val changed = videoProgressBar.isFocusable != enabled
+        videoProgressBar.isFocusable = enabled
+        videoProgressBar.isEnabled = enabled
+        return changed
     }
 
     fun setSeekable(value: Boolean) {
+        videoSeekable = value
+        updateTimelineAvailability()
         videoSeekBackButton.isEnabled = value
         videoSeekForwardButton.isEnabled = value
         audioSeekBackButton.isEnabled = value
@@ -1103,20 +1188,24 @@ class TvPlayerChromeView(
         audioNextButton.visibility = if (value) VISIBLE else GONE
     }
 
-    fun hasRelatedItems(): Boolean =
-        relatedSection.visibility == VISIBLE && relatedCardsRow.childCount > 0
+    fun hasRelatedItems(): Boolean = lowerPanel.relatedAvailable
 
     fun focusRelated(): Boolean {
         if (!hasRelatedItems()) return false
+        lowerPanel.expand()
+        applyLowerPanelVisibility()
         relatedCardsRow.getChildAt(0)?.requestFocus()
         return true
     }
 
     fun hasDetails(): Boolean =
-        detailsSection.visibility == VISIBLE && detailsScrollView.visibility == VISIBLE
+        lowerPanel.detailsAvailable && detailsScrollView.visibility == VISIBLE
 
     fun focusDetails(): Boolean {
         if (!hasDetails()) return false
+        returnControlKey = "player:description"
+        lowerPanel.expand()
+        applyLowerPanelVisibility()
         detailsScrollView.requestFocus()
         return true
     }
@@ -1141,6 +1230,7 @@ class TvPlayerChromeView(
             )
         } else {
             val list = ArrayList<Pair<String, ViewGroup>>()
+            if (videoProgressBar.isFocusable) list.add(Pair("player_timeline", videoTimelineRow))
             list.add(Pair("player_controls", videoControlsRow))
             if (relatedSection.visibility == VISIBLE && relatedCardsRow.childCount > 0) {
                 list.add(Pair("player_related", relatedCardsRow))

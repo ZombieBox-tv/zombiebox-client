@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.RectF
 import android.view.View
 
@@ -12,7 +13,10 @@ class TvPlaybackProgressBar(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val trackRect = RectF()
     private val progressRect = RectF()
+    private val focusRect = RectF()
     private var progressFraction = 0f
+    private val density = context.resources.displayMetrics.density
+    var focusChanged: ((Boolean) -> Unit)? = null
     var accentColor: Int = Color.rgb(76, 239, 105)
         set(value) {
             field = value
@@ -21,6 +25,12 @@ class TvPlaybackProgressBar(context: Context) : View(context) {
 
     init {
         isFocusable = false
+    }
+
+    override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        invalidate()
+        focusChanged?.invoke(gainFocus)
     }
 
     fun setProgress(positionMs: Int, durationMs: Int) {
@@ -37,15 +47,29 @@ class TvPlaybackProgressBar(context: Context) : View(context) {
         val h = height.toFloat()
         if (w <= 0f || h <= 0f) return
 
-        val radius = h / 2f
-        trackRect.set(0f, 0f, w, h)
+        val thickness = minOf(h, 5f * density)
+        val radius = thickness / 2f
+        val top = (h - thickness) / 2f
+        trackRect.set(0f, top, w, top + thickness)
         paint.color = Color.rgb(42, 53, 56)
         canvas.drawRoundRect(trackRect, radius, radius, paint)
 
         if (progressFraction > 0f) {
-            progressRect.set(0f, 0f, w * progressFraction, h)
+            progressRect.set(0f, top, w * progressFraction, top + thickness)
             paint.color = accentColor
             canvas.drawRoundRect(progressRect, radius, radius, paint)
+        }
+        if (isFocused && isEnabled) {
+            paint.color = Color.WHITE
+            val thumbInset = minOf(6f * density, w / 2f)
+            val thumbX = (w * progressFraction).coerceIn(thumbInset, w - thumbInset)
+            canvas.drawCircle(thumbX, h / 2f, 5f * density, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 2f * density
+            paint.color = accentColor
+            focusRect.set(1f * density, 1f * density, w - 1f * density, h - 1f * density)
+            canvas.drawRoundRect(focusRect, 7f * density, 7f * density, paint)
+            paint.style = Paint.Style.FILL
         }
     }
 }

@@ -2,6 +2,12 @@ package io.github.diegog0477.zombiebox.client.features.playback.domain.policy
 
 /** User intent survives temporary visibility/surface loss; an explicit pause always wins. */
 class PlaybackIntent {
+    companion object {
+        /** Keep the user's latest play/pause choice through a stream replacement. */
+        fun replacementAutoplay(reportedState: String, controlTarget: Boolean?): Boolean =
+            controlTarget ?: (reportedState == "PLAYING" || reportedState == "BUFFERING")
+    }
+
     var foreground = true
     var surfaceAvailable = false
     var backgroundPlayback = false

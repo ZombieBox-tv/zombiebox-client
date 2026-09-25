@@ -65,7 +65,7 @@ class ProviderEmptyStateView(
         val isReady = CatalogUiPolicy.isReady(serviceState)
         val canBrowse = CatalogUiPolicy.canBrowseLibrary(provider, serviceState)
 
-        if (serviceState == "DISABLED" || serviceState == "AUTH_REQUIRED") {
+        if (CatalogUiPolicy.canConfigure(serviceState)) {
             actionsRow.addView(
                 ui.button(R.string.configure_services) { actions.providers() }
                     .apply { tag = "$provider:empty:settings" }
@@ -97,15 +97,17 @@ class ProviderEmptyStateView(
     }
 
     private fun truthfulMessage(provider: String): String =
-        when (serviceState) {
-            "DISABLED" -> context.getString(R.string.provider_service_disabled)
-            "AUTH_REQUIRED" -> context.getString(R.string.provider_service_auth_required)
-            "UNAVAILABLE",
-            "DEGRADED" -> context.getString(R.string.provider_service_unavailable)
-            "STARTING",
-            "WAITING",
-            "BUFFERING",
-            null -> context.getString(R.string.provider_service_waiting)
+        when {
+            serviceState == "DISABLED" -> context.getString(R.string.provider_service_disabled)
+            serviceState == "AUTH_REQUIRED" ->
+                context.getString(R.string.provider_service_auth_required)
+            CatalogUiPolicy.needsSetup(serviceState) ->
+                if (provider == "iptv") context.getString(R.string.iptv_needs_setup)
+                else context.getString(R.string.provider_service_needs_setup)
+            serviceState == "UNAVAILABLE" || serviceState == "DEGRADED" ->
+                context.getString(R.string.provider_service_unavailable)
+            serviceState in setOf("STARTING", "WAITING", "BUFFERING") || serviceState == null ->
+                context.getString(R.string.provider_service_waiting)
             else ->
                 when (provider) {
                     "youtube" -> context.getString(R.string.youtube_empty_home)

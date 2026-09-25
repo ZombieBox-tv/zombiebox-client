@@ -113,6 +113,14 @@
     <string name="connect">Connect</string>
     <string name="invalid_address">Enter an HTTP(S) gateway address without credentials.</string>
     <string name="diagnostics">Device diagnostics</string>
+    <string name="diagnostics_actions">
+        TESTS &amp; REPORTS
+    </string>
+    <string name="diagnostics_overview">Hardware overview</string>
+    <string name="diagnostics_inventory_hint">Display modes and available codecs</string>
+    <string name="diagnostics_export_hint">View and share the gateway report</string>
+    <string name="diagnostics_probes_hint">Check real media playback on this device</string>
+    <string name="diagnostics_rescan_hint">Refresh capabilities and network status</string>
     <string name="language">Language</string>
     <string name="presentation_mode">Presentation mode</string>
     <string name="close">Close</string>
@@ -275,6 +283,13 @@
     <string name="provider_service_auth_required">
         This service needs authorization. Open Services to connect its account or credentials.
     </string>
+    <string name="provider_service_needs_setup">
+        This service is not configured. Open Services to set it up.
+    </string>
+    <string name="iptv_needs_setup">
+        No playlist configured. Open Services to add an M3U playlist URL.
+    </string>
+    <string name="needs_setup">Needs setup</string>
     <string name="provider_service_waiting">Waiting for service status from the gateway…</string>
     <string name="mirror_waiting_for_stream">Waiting for stream</string>
     <string name="implementation_pending">Implementation pending</string>
@@ -305,6 +320,8 @@
     <string name="browser_text">Text for the focused field</string>
     <string name="browser_type">Type</string>
     <string name="run_probes">Run media probes</string>
+    <string name="player_timeline_position">Timeline: %1$s of %2$s. Left or right to seek.</string>
+    <string name="player_timeline_unavailable">Timeline unavailable</string>
     <string name="probe_description">
         Plays muted synthetic clips, one at a time. Results are saved on the gateway. Run again
         after system updates; a passing result still needs visual confirmation.
