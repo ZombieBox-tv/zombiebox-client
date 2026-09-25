@@ -8,4 +8,5 @@ data class ProbeState(
     val results: List<ProbeResult> = emptyList(),
     val saved: Boolean = false,
     val failed: Boolean = false,
+    val clockUnavailable: Boolean = false,
 )

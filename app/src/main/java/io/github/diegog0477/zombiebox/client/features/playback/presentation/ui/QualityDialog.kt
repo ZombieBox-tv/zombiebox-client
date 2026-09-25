@@ -76,6 +76,12 @@ class QualityDialog(private val context: Context) {
             },
             LinearLayout.LayoutParams(-1, -2),
         )
+        if (value.options.size == 1 && value.options[0].id.equals("auto", ignoreCase = true)) {
+            panel.addView(
+                ui.text(context.getString(R.string.quality_manual_unavailable), 15f, ui.muted)
+                    .apply { setPadding(ui.dp(8), ui.dp(14), ui.dp(8), 0) }
+            )
+        }
 
         dialog.setContentView(panel)
         dialog.window?.apply {

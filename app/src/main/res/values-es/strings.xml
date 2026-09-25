@@ -65,6 +65,10 @@
     <string name="more_info">Más información</string>
     <string name="quality">Calidad</string>
     <string name="quality_auto">Automática</string>
+    <string name="quality_manual_unavailable">
+        La calidad manual no está disponible para este video en este dispositivo. Ejecuta las
+        pruebas multimedia en Diagnóstico para comprobar los formatos admitidos.
+    </string>
     <string name="qualities_unavailable">Las opciones de calidad no están disponibles.</string>
     <string name="description">Descripción</string>
     <string name="details">Detalles</string>
@@ -325,6 +329,10 @@
     </string>
     <string name="probes_unavailable">
         Pruebas no disponibles o no se pudieron guardar. Genera los clips en el gateway y reintenta.
+    </string>
+    <string name="probe_clock_unavailable">
+        No se pudo verificar la hora del gateway. Revisa su reloj y conexión, actualízalo si hace
+        falta y vuelve a ejecutar las pruebas multimedia.
     </string>
     <string name="probes_saved">Resultados guardados en el gateway</string>
     <string name="probe_result">%1$s: %2$s · preparación %3$d ms · reproducido %4$d ms</string>

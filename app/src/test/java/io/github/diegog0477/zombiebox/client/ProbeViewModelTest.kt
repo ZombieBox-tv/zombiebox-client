@@ -1,6 +1,7 @@
 package io.github.diegog0477.zombiebox.client
 
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.model.ProbeAsset
+import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.model.ProbeClockUnavailable
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.model.ProbeResult
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.repository.ProbePlayback
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.repository.ProbeRepository
@@ -9,6 +10,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProbeViewModelTest {
+    @Test
+    fun missingTrustedProbeTimeHasDistinctActionableState() {
+        val repository =
+            object : ProbeRepository {
+                override fun assets(): List<ProbeAsset> = throw ProbeClockUnavailable()
+
+                override fun save(results: List<ProbeResult>) = Unit
+            }
+        val player =
+            object : ProbePlayback {
+                override fun start(asset: ProbeAsset, result: (ProbeResult) -> Unit) = Unit
+
+                override fun cancel() = Unit
+            }
+        val model = ProbeViewModel(repository, player, { it() }, { it() })
+        model.start()
+        assertTrue(model.state.failed)
+        assertTrue(model.state.clockUnavailable)
+    }
+
     @Test
     fun extendedProbeSkipsFailedPrerequisiteWithoutInventingDecoderFailure() {
         val started = ArrayList<String>()

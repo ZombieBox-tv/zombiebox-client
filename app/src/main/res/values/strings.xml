@@ -58,6 +58,10 @@
     <string name="more_info">More info</string>
     <string name="quality">Quality</string>
     <string name="quality_auto">Auto</string>
+    <string name="quality_manual_unavailable">
+        Manual quality is unavailable for this video on this device. Run media probes in Diagnostics
+        to check supported formats.
+    </string>
     <string name="qualities_unavailable">Quality options are unavailable.</string>
     <string name="description">Description</string>
     <string name="details">Details</string>
@@ -308,6 +312,10 @@
     <string name="probes_unavailable">
         Probe assets unavailable or results could not be saved. Generate fixtures on your gateway
         and retry.
+    </string>
+    <string name="probe_clock_unavailable">
+        Gateway probe time is unavailable. Check the gateway clock and connection, update the
+        gateway if needed, then run media probes again.
     </string>
     <string name="probes_saved">Results saved on gateway</string>
     <string name="probe_result">%1$s: %2$s · prepare %3$d ms · played %4$d ms</string>

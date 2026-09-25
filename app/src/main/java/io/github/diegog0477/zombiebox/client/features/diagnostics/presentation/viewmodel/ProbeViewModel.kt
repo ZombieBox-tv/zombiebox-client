@@ -1,6 +1,7 @@
 package io.github.diegog0477.zombiebox.client.features.diagnostics.presentation.viewmodel
 
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.model.ProbeAsset
+import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.model.ProbeClockUnavailable
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.model.ProbeResult
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.repository.ProbePlayback
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.repository.ProbeRepository
@@ -32,6 +33,12 @@ class ProbeViewModel(
             val assets =
                 try {
                     repository.assets()
+                } catch (_: ProbeClockUnavailable) {
+                    deliver {
+                        if (!closed && generation == run)
+                            publish(ProbeState(failed = true, clockUnavailable = true))
+                    }
+                    return@execute
                 } catch (_: Exception) {
                     emptyList()
                 }
@@ -49,16 +56,27 @@ class ProbeViewModel(
         if (index == assets.size) {
             publish(ProbeState(running = true, results = results))
             execute {
+                var clockUnavailable = false
                 val saved =
                     try {
                         repository.save(results)
                         true
+                    } catch (_: ProbeClockUnavailable) {
+                        clockUnavailable = true
+                        false
                     } catch (_: Exception) {
                         false
                     }
                 deliver {
                     if (!closed && run == generation)
-                        publish(ProbeState(results = results, saved = saved, failed = !saved))
+                        publish(
+                            ProbeState(
+                                results = results,
+                                saved = saved,
+                                failed = !saved,
+                                clockUnavailable = clockUnavailable,
+                            )
+                        )
                 }
             }
             return

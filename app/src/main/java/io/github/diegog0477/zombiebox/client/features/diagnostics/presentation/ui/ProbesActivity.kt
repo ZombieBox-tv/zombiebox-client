@@ -59,6 +59,7 @@ class ProbesActivity : Activity() {
                             SurfaceEvidence(applicationContext).record(it.id, it.status)
                         }
                     },
+                    { packageManager.getPackageInfo(packageName, 0).versionName ?: "" },
                 ) {
                     diagnostics.scanAndSave()
                 },
@@ -138,7 +139,8 @@ class ProbesActivity : Activity() {
             start.isEnabled = !value.running && playback.surface != null
             val heading =
                 getString(
-                    if (value.failed) R.string.probes_unavailable
+                    if (value.clockUnavailable) R.string.probe_clock_unavailable
+                    else if (value.failed) R.string.probes_unavailable
                     else if (value.saved) R.string.probes_saved
                     else if (value.running) R.string.loading else R.string.run_probes
                 )

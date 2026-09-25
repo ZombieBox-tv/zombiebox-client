@@ -1,5 +1,18 @@
 # zombiebox-client: component work
 
+## dev.53 probe clock and related retry
+
+Use gateway time for newly measured playback probes on devices with incorrect
+system clocks, refresh authenticated Client version before rerunning the suite,
+and explain Auto-only quality choices. Retry a related YouTube page only for
+bounded transient worker failures; never retry an authorized empty result or
+an authentication error. JVM, release build and Vizio physical evidence are
+recorded separately. On the selected Vizio/API13, the completed suite saved
+14 probe results with gateway time despite the device's 2010 clock. A YouTube
+video then offered Auto, 360p, 240p and 144p rather than Auto alone, and showed
+topic-related items below the player. Spotify sound, AirPlay media, receiver
+recovery and broad API compatibility remain open.
+
 ## dev.52 player controls and receiver continuity
 
 Use a transient fullscreen TV chrome with immediate play/pause feedback, D-pad
@@ -12,9 +25,8 @@ dev.51 on the selected Vizio/API13 with the same certificate and retained data;
 Home and the YouTube feed rendered and responded to D-pad navigation. The
 fullscreen quality dialog opened from its D-pad gear, but this played source
 offered Auto only; manual switching, related-item relevance, Spotify
-audio/artwork, AirPlay media
-and all receiver-recovery paths still need physical interaction. No product
-milestone closes.
+audio/artwork, AirPlay media and all receiver-recovery paths still need
+physical interaction. No product milestone closes.
 
 ## dev.51 provider navigation and receiver account states
 
