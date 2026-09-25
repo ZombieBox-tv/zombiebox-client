@@ -1,5 +1,13 @@
 # zombiebox-client: component work
 
+## dev.56 additive protocol pin
+
+Pin Protocol dev.44 for the bounded Cast ceiling schema. It adds no Client
+runtime behavior or APK version. The installed signed Client remains dev.55;
+the new Cast negotiation needs a separate phone/TV physical test. No product
+milestone closes.
+
+
 ## dev.54 TV controls, diagnostics and IPTV setup
 
 The YouTube player starts with its recommendation rail hidden. D-pad Down
