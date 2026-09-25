@@ -5,6 +5,7 @@ import android.media.MediaPlayer
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.util.Log
 import io.github.diegog0477.zombiebox.client.features.playback.domain.policy.PlaybackIntent
 
 /** One media looper and one decoder. Callbacks belong to a specific playback generation. */
@@ -117,7 +118,8 @@ class EmbeddedPlayer(
             report()
             try {
                 prepare(url)
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                Log.w("ZombiePlayback", "MediaPlayer prepare failed: ${error.javaClass.simpleName}")
                 fail()
             }
         }
@@ -189,8 +191,11 @@ class EmbeddedPlayer(
                 handler.removeCallbacks(tick)
             }
         }
-        media.setOnErrorListener { source, _, _ ->
-            if (isCurrent(source)) fail()
+        media.setOnErrorListener { source, what, extra ->
+            if (isCurrent(source)) {
+                Log.w("ZombiePlayback", "MediaPlayer error what=$what extra=$extra")
+                fail()
+            }
             true
         }
         media.setDataSource(url)

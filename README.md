@@ -160,3 +160,7 @@ Dev.42: one-shot playback return to paged guide, catalog details or search; boun
 ## dev.43 navigation and functional media increment
 
 Dev.43: retained settings parent menus, bounded recreation bookmarks, stale-load fencing and stable provider identity; Browser D-pad escape, semantic focus restoration and stale-frame cleanup. VersionCode43. Physical navigation acceptance remains deferred.
+
+## dev.55 playback diagnostics and IPTV input
+
+IPTV playlist and EPG URLs are readable while entering them; credentials remain masked. MediaPlayer records numeric error codes and exception types without logging stream URLs. APK versionCode 55. AirPlay and IPTV playback on the Vizio remain unverified for this candidate.

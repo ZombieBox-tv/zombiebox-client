@@ -3,6 +3,7 @@
   "repository": "zombiebox-client",
   "productRegistry": "workspace:docs/milestones.json",
   "notes": [
+    "Dev.55: IPTV playlist and EPG URL input remains visible while credentials remain masked, and MediaPlayer errors log numeric diagnostics without stream URLs. Build/JVM validation is separate from Vizio AirPlay and IPTV playback acceptance. No product milestone closes.",
     "Dev.54: Collapsible YouTube player rail and D-pad timeline, buffered quality intent, dark TV diagnostics, and localized unconfigured IPTV setup. JVM/build/lint pass; Vizio focus, real quality switching and provider playback remain open. No product milestone closes.",
     "Dev.53: Uses gateway time for fresh media probes on devices with wrong clocks, refreshes authenticated Client version before probing, explains Auto-only quality, and retries transient related-YouTube worker failures. Selected Vizio/API13 saved 14 timestamped probe results and a YouTube video offered Auto, 360p, 240p and 144p plus topic-related suggestions. Manual quality continuity, Spotify/AirPlay playback and receiver recovery still need physical validation; no product milestone closes.",
     "Dev.52: Transient D-pad player chrome, immediate play/pause feedback, related YouTube video rail with pagination and details, hardware-evidence-gated quality choices, and persisted receiver intent with safe lease rearming. A signed update installed over dev.51 on Vizio/API13; Home and YouTube feed rendered with D-pad navigation. The quality dialog opened by D-pad but showed Auto only for the played source; manual switching, related relevance, and Spotify/AirPlay playback remain unverified. No product milestone closes.",
@@ -128,6 +129,6 @@
       "remoteURL": "https://github.com/ZombieBox-tv/zombiebox-client/milestone/10"
     }
   ],
-  "developmentCheckpoint": "v0.1.0-dev.51",
+  "developmentCheckpoint": "v0.1.0-dev.55",
   "remote": "https://github.com/ZombieBox-tv/zombiebox-client"
 }

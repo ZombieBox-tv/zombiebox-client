@@ -525,7 +525,7 @@ class SettingsDialogs(
             field(
                 form,
                 if (id == "iptv") R.string.playlist_url else R.string.service_url,
-                secret = true,
+                secret = id != "iptv",
             )
         addressField.hint =
             activity.getString(
@@ -546,7 +546,7 @@ class SettingsDialogs(
         form.addView(clearCheckbox)
 
         val userField = if (id == "jellyfin") field(form, R.string.service_user) else null
-        val epgField = if (id == "iptv") field(form, R.string.epg_url, secret = true) else null
+        val epgField = if (id == "iptv") field(form, R.string.epg_url) else null
         val mappingField =
             if (id == "iptv") field(form, R.string.epg_mapping, multiLine = true) else null
         if (id == "iptv") {

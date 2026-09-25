@@ -228,6 +228,10 @@ Dev.42: one-shot playback return to paged guide, catalog details or search; boun
 ## dev.43 navigation and functional media increment
 
 Dev.43: retained settings parent menus, bounded recreation bookmarks, stale-load fencing and stable provider identity; Browser D-pad escape, semantic focus restoration and stale-frame cleanup. VersionCode43. Physical navigation acceptance remains deferred.
+
+## dev.55 playback diagnostics and IPTV input
+
+Playlist and EPG URL fields display entered text while credentials remain masked. MediaPlayer logs numeric failure details without logging stream URLs. APK versionCode 55; physical AirPlay/IPTV playback acceptance remains open.
 ## dev.46 YouTube account navigation
 
 Client shows the gateway-owned TV OAuth verification code/URL, manual interval-
