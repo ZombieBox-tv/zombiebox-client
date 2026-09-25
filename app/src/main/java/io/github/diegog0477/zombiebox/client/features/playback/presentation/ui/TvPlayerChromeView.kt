@@ -1,5 +1,6 @@
 package io.github.diegog0477.zombiebox.client.features.playback.presentation.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -13,6 +14,7 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import io.github.diegog0477.zombiebox.client.R
 import io.github.diegog0477.zombiebox.client.core.model.MediaItem
@@ -30,12 +32,15 @@ data class TvPlayerActions(
     val playPause: () -> Unit,
     val next: () -> Unit,
     val seekForward: () -> Unit,
+    val description: () -> Unit = {},
+    val quality: () -> Unit = {},
     val audioTracks: () -> Unit,
     val subtitles: () -> Unit,
     val minimize: () -> Unit,
     val external: () -> Unit,
     val stop: () -> Unit,
     val playItem: (MediaItem) -> Unit,
+    val loadMoreRelated: (() -> Unit)? = null,
 )
 
 /**
@@ -46,8 +51,11 @@ data class TvPlayerActions(
  *   symbol transport controls, and YouTube related rail when available.
  * - Audio mode (Spotify/Music): dedicated fullscreen UI featuring large album artwork, metadata,
  *   and prominent transport controls without a black video rectangle.
+ * - Transient chrome with D-pad auto-hide, description area, quality selection, and smooth related
+ *   pagination.
  * - API 9+ compatibility using Barlow typography, provider accents, and explicit D-pad focus.
  */
+@SuppressLint("ViewConstructor")
 @Suppress("DEPRECATION")
 class TvPlayerChromeView(
     context: Context,
@@ -61,11 +69,24 @@ class TvPlayerChromeView(
     private var isAudioMode = false
     private var currentItem: MediaItem? = null
     private var isPlaying = false
+    private var optimisticTargetPlaying: Boolean? = null
+    private var optimisticTimestamp = 0L
+
+    var isChromeVisible = true
+        private set
+
+    private val inactivityRunnable = Runnable {
+        if (isPlaying && isChromeVisible && !isAudioMode) {
+            hideChrome()
+        }
+    }
 
     // Video overlay views
     private val videoOverlay: FrameLayout
+    private val topScrim: LinearLayout
     private val videoTitleText: TextView
     private val videoSubtitleText: TextView
+    private val bottomScrim: LinearLayout
     private val videoTimeText: TextView
     private val videoDurationText: TextView
     private val videoProgressBar: TvPlaybackProgressBar
@@ -75,6 +96,8 @@ class TvPlayerChromeView(
     val videoPlayPauseButton: ImageButton
     val videoNextButton: ImageButton
     val videoSeekForwardButton: ImageButton
+    val videoDescriptionButton: ImageButton
+    val videoQualityButton: ImageButton
     val videoAudioTracksButton: ImageButton
     val videoSubtitlesButton: ImageButton
     val videoMinimizeButton: ImageButton
@@ -82,6 +105,11 @@ class TvPlayerChromeView(
     val videoStopButton: ImageButton
     private val relatedSection: LinearLayout
     private val relatedCardsRow: LinearLayout
+    private val detailsSection: LinearLayout
+    private val detailsTitleText: TextView
+    private val detailsChannelText: TextView
+    private val detailsScrollView: ScrollView
+    private val detailsDescriptionText: TextView
 
     // Audio overlay views
     private val audioOverlay: FrameLayout
@@ -110,11 +138,24 @@ class TvPlayerChromeView(
 
     init {
         // --- 1. Video Overlay Layout ---
-        videoOverlay = FrameLayout(context)
+        videoOverlay =
+            FrameLayout(context).apply {
+                isClickable = true
+                isFocusable = false
+                setOnClickListener {
+                    if (isAudioMode) return@setOnClickListener
+                    if (isChromeVisible) {
+                        hideChrome()
+                    } else {
+                        showChrome()
+                        videoPlayPauseButton.requestFocus()
+                    }
+                }
+            }
         addView(videoOverlay, LayoutParams(-1, -1))
 
         // Top scrim & info
-        val topScrim =
+        topScrim =
             LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundDrawable(
@@ -124,6 +165,7 @@ class TvPlayerChromeView(
                     )
                 )
                 setPadding(ui.dp(32), ui.dp(24), ui.dp(32), ui.dp(40))
+                setOnClickListener { resetInactivityTimer() }
             }
         videoTitleText =
             TextView(context).apply {
@@ -149,7 +191,7 @@ class TvPlayerChromeView(
         videoOverlay.addView(topScrim, LayoutParams(-1, -2, Gravity.TOP))
 
         // Bottom scrim & controls
-        val bottomScrim =
+        bottomScrim =
             LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundDrawable(
@@ -163,6 +205,7 @@ class TvPlayerChromeView(
                     )
                 )
                 setPadding(ui.dp(24), ui.dp(28), ui.dp(24), ui.dp(16))
+                setOnClickListener { resetInactivityTimer() }
             }
 
         // Timeline Row
@@ -214,12 +257,14 @@ class TvPlayerChromeView(
 
         videoSeekBackButton =
             createButton(TvPlayerSymbol.SEEK_BACK, R.string.seek_back, "player:seek_back") {
+                resetInactivityTimer()
                 actions.seekBack()
             }
         videoControlsRow.addView(videoSeekBackButton)
 
         videoPrevButton =
             createButton(TvPlayerSymbol.PREVIOUS, R.string.music_previous, "player:prev") {
+                resetInactivityTimer()
                 actions.previous()
             }
         videoControlsRow.addView(videoPrevButton)
@@ -231,12 +276,16 @@ class TvPlayerChromeView(
                 "player:play_pause",
                 sizeDp = 48,
             ) {
-                actions.playPause()
+                resetInactivityTimer()
+                onPlayPauseClicked()
             }
         videoControlsRow.addView(videoPlayPauseButton)
 
         videoNextButton =
-            createButton(TvPlayerSymbol.NEXT, R.string.next_item, "player:next") { actions.next() }
+            createButton(TvPlayerSymbol.NEXT, R.string.next_item, "player:next") {
+                resetInactivityTimer()
+                actions.next()
+            }
         videoControlsRow.addView(videoNextButton)
 
         videoSeekForwardButton =
@@ -245,9 +294,27 @@ class TvPlayerChromeView(
                 R.string.seek_forward,
                 "player:seek_forward",
             ) {
+                resetInactivityTimer()
                 actions.seekForward()
             }
         videoControlsRow.addView(videoSeekForwardButton)
+
+        videoDescriptionButton =
+            createButton(TvPlayerSymbol.DESCRIPTION, R.string.description, "player:description") {
+                resetInactivityTimer()
+                if (detailsSection.visibility == VISIBLE) {
+                    detailsScrollView.requestFocus()
+                }
+                actions.description()
+            }
+        videoControlsRow.addView(videoDescriptionButton)
+
+        videoQualityButton =
+            createButton(TvPlayerSymbol.QUALITY, R.string.quality, "player:quality") {
+                resetInactivityTimer()
+                actions.quality()
+            }
+        videoControlsRow.addView(videoQualityButton)
 
         videoAudioTracksButton =
             createButton(
@@ -255,30 +322,37 @@ class TvPlayerChromeView(
                 R.string.audio_tracks,
                 "player:audio_tracks",
             ) {
+                resetInactivityTimer()
                 actions.audioTracks()
             }
         videoControlsRow.addView(videoAudioTracksButton)
 
         videoSubtitlesButton =
             createButton(TvPlayerSymbol.SUBTITLES, R.string.subtitles, "player:subtitles") {
+                resetInactivityTimer()
                 actions.subtitles()
             }
         videoControlsRow.addView(videoSubtitlesButton)
 
         videoMinimizeButton =
             createButton(TvPlayerSymbol.MINIMIZE, R.string.minimize, "player:minimize") {
+                resetInactivityTimer()
                 actions.minimize()
             }
         videoControlsRow.addView(videoMinimizeButton)
 
         videoExternalButton =
             createButton(TvPlayerSymbol.EXTERNAL, R.string.external_player, "player:external") {
+                resetInactivityTimer()
                 actions.external()
             }
         videoControlsRow.addView(videoExternalButton)
 
         videoStopButton =
-            createButton(TvPlayerSymbol.STOP, R.string.stop, "player:stop") { actions.stop() }
+            createButton(TvPlayerSymbol.STOP, R.string.stop, "player:stop") {
+                resetInactivityTimer()
+                actions.stop()
+            }
         videoControlsRow.addView(videoStopButton)
 
         controlsScroll.addView(videoControlsRow)
@@ -300,6 +374,57 @@ class TvPlayerChromeView(
         relatedScroll.addView(relatedCardsRow)
         relatedSection.addView(relatedScroll)
         bottomScrim.addView(relatedSection)
+
+        // Details Section (below related rail)
+        detailsSection =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = GONE
+                setPadding(0, ui.dp(8), 0, 0)
+            }
+        detailsTitleText =
+            TextView(context).apply {
+                textSize = 16f
+                typeface = TvTypography.semibold(context)
+                setTextColor(Color.WHITE)
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            }
+        detailsSection.addView(detailsTitleText)
+
+        detailsChannelText =
+            TextView(context).apply {
+                textSize = 13f
+                typeface = TvTypography.regular(context)
+                setTextColor(accentColor)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                setPadding(0, ui.dp(2), 0, ui.dp(4))
+            }
+        detailsSection.addView(detailsChannelText)
+
+        detailsScrollView =
+            ScrollView(context).apply {
+                isFocusable = true
+                isClickable = true
+                setBackgroundDrawable(detailsFocusBackground(accentColor))
+                setPadding(ui.dp(10), ui.dp(6), ui.dp(10), ui.dp(6))
+                tag = "player:details"
+                setOnFocusChangeListener { _, focused -> if (focused) resetInactivityTimer() }
+            }
+        detailsDescriptionText =
+            TextView(context).apply {
+                textSize = 14f
+                typeface = TvTypography.regular(context)
+                setTextColor(Color.rgb(220, 225, 230))
+                setLineSpacing(ui.dp(3).toFloat(), 1f)
+            }
+        detailsScrollView.addView(detailsDescriptionText)
+        detailsSection.addView(
+            detailsScrollView,
+            LinearLayout.LayoutParams(-1, ui.dp(84)).apply { topMargin = ui.dp(4) },
+        )
+        bottomScrim.addView(detailsSection)
 
         videoOverlay.addView(bottomScrim, LayoutParams(-1, -2, Gravity.BOTTOM))
 
@@ -454,7 +579,7 @@ class TvPlayerChromeView(
                 sizeDp = 58,
                 circular = true,
             ) {
-                actions.playPause()
+                onPlayPauseClicked()
             }
         audioPrimaryControlsRow.addView(audioPlayPauseButton)
 
@@ -623,6 +748,77 @@ class TvPlayerChromeView(
         }
     }
 
+    private fun detailsFocusBackground(accent: Int): StateListDrawable {
+        fun makeDrawable(bgColor: Int, strokeColor: Int, strokeWidthDp: Int) =
+            GradientDrawable().apply {
+                setColor(bgColor)
+                cornerRadius = ui.dp(6).toFloat()
+                setStroke(ui.dp(strokeWidthDp), strokeColor)
+            }
+        return StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_focused),
+                makeDrawable(Color.argb(220, 20, 28, 32), accent, 2),
+            )
+            addState(
+                intArrayOf(android.R.attr.state_pressed),
+                makeDrawable(Color.argb(220, 20, 28, 32), accent, 2),
+            )
+            addState(intArrayOf(), makeDrawable(Color.argb(140, 12, 16, 18), Color.TRANSPARENT, 0))
+        }
+    }
+
+    private fun onPlayPauseClicked() {
+        val currentEffective = optimisticTargetPlaying ?: isPlaying
+        val next = !currentEffective
+        optimisticTargetPlaying = next
+        optimisticTimestamp = System.currentTimeMillis()
+        applyPlayPauseVisuals(next)
+        actions.playPause()
+    }
+
+    fun setOptimisticPlaying(playing: Boolean) {
+        optimisticTargetPlaying = playing
+        optimisticTimestamp = System.currentTimeMillis()
+        applyPlayPauseVisuals(playing)
+    }
+
+    fun optimisticPlaying(): Boolean? = optimisticTargetPlaying
+
+    private fun applyPlayPauseVisuals(playing: Boolean) {
+        val symbol = if (playing) TvPlayerSymbol.PAUSE else TvPlayerSymbol.PLAY
+        (videoPlayPauseButton.drawable as? TvPlayerSymbolDrawable)?.symbol = symbol
+        (audioPlayPauseButton.drawable as? TvPlayerSymbolDrawable)?.symbol = symbol
+        videoPlayPauseButton.invalidate()
+        audioPlayPauseButton.invalidate()
+        val descRes = if (playing) R.string.paused else R.string.play
+        videoPlayPauseButton.contentDescription = context.getString(descRes)
+        audioPlayPauseButton.contentDescription = context.getString(descRes)
+    }
+
+    fun resetInactivityTimer(delayMs: Long = 4500L) {
+        removeCallbacks(inactivityRunnable)
+        if (isPlaying && isChromeVisible && !isAudioMode) {
+            postDelayed(inactivityRunnable, delayMs)
+        }
+    }
+
+    fun showChrome() {
+        if (isAudioMode) return
+        isChromeVisible = true
+        topScrim.visibility = VISIBLE
+        bottomScrim.visibility = VISIBLE
+        resetInactivityTimer()
+    }
+
+    fun hideChrome() {
+        if (isAudioMode) return
+        removeCallbacks(inactivityRunnable)
+        isChromeVisible = false
+        topScrim.visibility = GONE
+        bottomScrim.visibility = GONE
+    }
+
     /** Binds active session information and switches between video and audio chrome. */
     fun bindSession(
         item: MediaItem?,
@@ -632,6 +828,7 @@ class TvPlayerChromeView(
         canNext: Boolean,
         seekable: Boolean,
         relatedItems: List<MediaItem>,
+        hasMoreRelated: Boolean = false,
     ) {
         currentItem = item
         isAudioMode = isAudio
@@ -650,6 +847,8 @@ class TvPlayerChromeView(
         refreshButtonStyles()
 
         if (isAudio) {
+            removeCallbacks(inactivityRunnable)
+            isChromeVisible = true
             videoOverlay.visibility = GONE
             audioOverlay.visibility = VISIBLE
             audioOverlay.setBackgroundDrawable(
@@ -685,6 +884,7 @@ class TvPlayerChromeView(
         } else {
             audioOverlay.visibility = GONE
             videoOverlay.visibility = VISIBLE
+            showChrome()
 
             videoTitleText.text = title
             videoSubtitleText.text = subtitle
@@ -696,9 +896,29 @@ class TvPlayerChromeView(
             videoSeekBackButton.isEnabled = seekable
             videoSeekForwardButton.isEnabled = seekable
 
+            // Details section (channel, title, description) when semantic metadata exists
+            val hasDesc = !item?.description.isNullOrEmpty()
+            val hasChannel = !item?.subtitle.isNullOrEmpty()
+            if (hasDesc || hasChannel) {
+                detailsTitleText.text = title
+                detailsChannelText.text = subtitle
+                detailsChannelText.setTextColor(accent)
+                detailsChannelText.visibility = if (hasChannel) VISIBLE else GONE
+                detailsDescriptionText.text = item.description
+                detailsScrollView.visibility = if (hasDesc) VISIBLE else GONE
+                detailsSection.visibility = VISIBLE
+                videoDescriptionButton.visibility = VISIBLE
+            } else {
+                detailsSection.visibility = GONE
+                videoDescriptionButton.visibility = GONE
+            }
+
+            // Quality button is always visible in shared video player
+            videoQualityButton.visibility = VISIBLE
+
             // Related videos rail (YouTube)
             if (provider == "youtube" && relatedItems.isNotEmpty()) {
-                populateRelatedRail(relatedItems)
+                setRelatedItems(relatedItems, hasMoreRelated)
                 relatedSection.visibility = VISIBLE
             } else {
                 relatedSection.visibility = GONE
@@ -707,8 +927,29 @@ class TvPlayerChromeView(
         }
     }
 
-    private fun populateRelatedRail(items: List<MediaItem>) {
-        relatedCardsRow.removeAllViews()
+    fun setRelatedItems(items: List<MediaItem>, hasMore: Boolean = false) {
+        val existingCount = relatedCardsRow.childCount
+        var canAppend = existingCount > 0 && items.size >= existingCount
+        if (canAppend) {
+            for (i in 0 until existingCount) {
+                val card = relatedCardsRow.getChildAt(i)
+                if (card.tag != "related:${items[i].id}") {
+                    canAppend = false
+                    break
+                }
+            }
+        }
+
+        if (canAppend) {
+            val newItems = items.drop(existingCount)
+            appendRelatedCards(newItems, hasMore)
+        } else {
+            relatedCardsRow.removeAllViews()
+            appendRelatedCards(items, hasMore)
+        }
+    }
+
+    fun appendRelatedCards(items: List<MediaItem>, hasMore: Boolean = false) {
         val cardWidth = ui.dp(150)
         val thumbHeight = ui.dp(84)
 
@@ -721,7 +962,20 @@ class TvPlayerChromeView(
                     setBackgroundDrawable(cardFocusBackground(accentColor))
                     setPadding(ui.dp(4), ui.dp(4), ui.dp(4), ui.dp(6))
                     tag = "related:${item.id}"
-                    setOnClickListener { actions.playItem(item) }
+                    setOnClickListener {
+                        resetInactivityTimer()
+                        actions.playItem(item)
+                    }
+                    setOnFocusChangeListener { _, focused ->
+                        if (focused) {
+                            resetInactivityTimer()
+                            val total = relatedCardsRow.childCount
+                            val currentPos = relatedCardsRow.indexOfChild(this)
+                            if (currentPos >= total - 2) {
+                                actions.loadMoreRelated?.invoke()
+                            }
+                        }
+                    }
                     layoutParams =
                         LinearLayout.LayoutParams(cardWidth, -2).apply { rightMargin = ui.dp(10) }
                 }
@@ -762,11 +1016,15 @@ class TvPlayerChromeView(
         videoPlayPauseButton.setBackgroundDrawable(controlBackground(accentColor))
         videoNextButton.setBackgroundDrawable(controlBackground(accentColor))
         videoSeekForwardButton.setBackgroundDrawable(controlBackground(accentColor))
+        videoDescriptionButton.setBackgroundDrawable(controlBackground(accentColor))
+        videoQualityButton.setBackgroundDrawable(controlBackground(accentColor))
         videoAudioTracksButton.setBackgroundDrawable(controlBackground(accentColor))
         videoSubtitlesButton.setBackgroundDrawable(controlBackground(accentColor))
         videoMinimizeButton.setBackgroundDrawable(controlBackground(accentColor))
         videoExternalButton.setBackgroundDrawable(controlBackground(accentColor))
         videoStopButton.setBackgroundDrawable(controlBackground(accentColor))
+        detailsScrollView.setBackgroundDrawable(detailsFocusBackground(accentColor))
+        detailsChannelText.setTextColor(accentColor)
 
         audioPrevButton.setBackgroundDrawable(controlBackground(accentColor))
         audioSeekBackButton.setBackgroundDrawable(controlBackground(accentColor))
@@ -781,7 +1039,7 @@ class TvPlayerChromeView(
     }
 
     fun updateProgress(status: String, positionMs: Int, durationMs: Int) {
-        isPlaying = status == "PLAYING"
+        val wasPlaying = isPlaying
         val timeLabel = ui.formatTime(positionMs)
         val durationLabel = if (durationMs > 0) ui.formatTime(durationMs) else ""
 
@@ -793,13 +1051,42 @@ class TvPlayerChromeView(
         audioDurationText.text = durationLabel
         audioProgressBar.setProgress(positionMs, durationMs)
 
-        val symbol = if (isPlaying) TvPlayerSymbol.PAUSE else TvPlayerSymbol.PLAY
-        (videoPlayPauseButton.drawable as? TvPlayerSymbolDrawable)?.symbol = symbol
-        (audioPlayPauseButton.drawable as? TvPlayerSymbolDrawable)?.symbol = symbol
+        val realPlaying = status == "PLAYING" || status == "BUFFERING"
 
-        val descRes = if (isPlaying) R.string.paused else R.string.play
-        videoPlayPauseButton.contentDescription = context.getString(descRes)
-        audioPlayPauseButton.contentDescription = context.getString(descRes)
+        if (status in listOf("ENDED", "STOPPED", "FAILED")) {
+            optimisticTargetPlaying = null
+            isPlaying = false
+            applyPlayPauseVisuals(false)
+            removeCallbacks(inactivityRunnable)
+            if (!isAudioMode && !isChromeVisible) {
+                showChrome()
+            }
+        } else {
+            val opt = optimisticTargetPlaying
+            if (opt != null) {
+                if (realPlaying == opt) {
+                    optimisticTargetPlaying = null
+                    isPlaying = realPlaying
+                    applyPlayPauseVisuals(isPlaying)
+                } else if (System.currentTimeMillis() - optimisticTimestamp > 2500L) {
+                    optimisticTargetPlaying = null
+                    isPlaying = realPlaying
+                    applyPlayPauseVisuals(isPlaying)
+                }
+            } else {
+                isPlaying = realPlaying
+                applyPlayPauseVisuals(isPlaying)
+            }
+
+            if (status == "PLAYING" && !wasPlaying) {
+                resetInactivityTimer()
+            } else if (status == "BUFFERING" || status == "PAUSED") {
+                removeCallbacks(inactivityRunnable)
+                if (!isAudioMode && !isChromeVisible) {
+                    showChrome()
+                }
+            }
+        }
     }
 
     fun setSeekable(value: Boolean) {
@@ -816,6 +1103,33 @@ class TvPlayerChromeView(
         audioNextButton.visibility = if (value) VISIBLE else GONE
     }
 
+    fun hasRelatedItems(): Boolean =
+        relatedSection.visibility == VISIBLE && relatedCardsRow.childCount > 0
+
+    fun focusRelated(): Boolean {
+        if (!hasRelatedItems()) return false
+        relatedCardsRow.getChildAt(0)?.requestFocus()
+        return true
+    }
+
+    fun hasDetails(): Boolean =
+        detailsSection.visibility == VISIBLE && detailsScrollView.visibility == VISIBLE
+
+    fun focusDetails(): Boolean {
+        if (!hasDetails()) return false
+        detailsScrollView.requestFocus()
+        return true
+    }
+
+    val relatedCards: ViewGroup
+        get() = relatedCardsRow
+
+    val detailsView: ScrollView
+        get() = detailsScrollView
+
+    val controlsRow: ViewGroup
+        get() = videoControlsRow
+
     /**
      * Exposes focusable view groups to [io.github.diegog0477.zombiebox.client.core.ui.RemoteFocus].
      */
@@ -830,6 +1144,9 @@ class TvPlayerChromeView(
             list.add(Pair("player_controls", videoControlsRow))
             if (relatedSection.visibility == VISIBLE && relatedCardsRow.childCount > 0) {
                 list.add(Pair("player_related", relatedCardsRow))
+            }
+            if (detailsSection.visibility == VISIBLE && detailsScrollView.visibility == VISIBLE) {
+                list.add(Pair("player_details", detailsSection))
             }
             list
         }

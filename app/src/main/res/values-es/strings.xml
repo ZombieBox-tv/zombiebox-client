@@ -63,6 +63,12 @@
     <string name="play_pause">Reproducir / Pausar</string>
     <string name="expand">Ampliar</string>
     <string name="more_info">Más información</string>
+    <string name="quality">Calidad</string>
+    <string name="quality_auto">Automática</string>
+    <string name="qualities_unavailable">Las opciones de calidad no están disponibles.</string>
+    <string name="description">Descripción</string>
+    <string name="details">Detalles</string>
+    <string name="related_content">Contenido relacionado</string>
     <string name="welcome">El mismo dispositivo. Más posibilidades.</string>
     <string name="welcome_detail">
         Conecta tu gateway y agrega un servicio o una lista IPTV para empezar.

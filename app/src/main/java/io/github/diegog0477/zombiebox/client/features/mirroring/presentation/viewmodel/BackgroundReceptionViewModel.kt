@@ -25,6 +25,7 @@ class BackgroundReceptionViewModel(
 
     var observer: ((BackgroundReception) -> Unit)? = null
     private var mediaListening = false
+    private var desiredMediaProvider = ""
     private var castListening = false
     private var visible = true
     private var closed = false
@@ -34,11 +35,16 @@ class BackgroundReceptionViewModel(
     private var attempts = 0
     private var retryAt = 0L
     private var healthySince: Long? = null
+    private var rearmAttempts = 0
+    private var rearmRetryAt = 0L
 
     fun configure(mediaProvider: String? = null, castEnabled: Boolean? = null) {
         if (closed) return
         mediaProvider?.let {
             mediaListening = it in listOf("spotify", "airplay", "auto", "universal")
+            desiredMediaProvider = if (mediaListening) it else ""
+            rearmAttempts = 0
+            rearmRetryAt = 0L
         }
         castEnabled?.let { castListening = it }
         generation++
@@ -68,8 +74,16 @@ class BackgroundReceptionViewModel(
         loading = true
         val request = generation
         val previous = session.state.plan?.sessionId
+        val desired = desiredMediaProvider
+        val canRearm = desired.isNotEmpty() && clock() >= rearmRetryAt
         execute {
-            val result = runCatching { repository.active() }
+            val result = runCatching {
+                val active = repository.active()
+                if (active == null && canRearm && repository.mediaProvider().isEmpty()) {
+                    repository.rearmMediaProvider(desired)
+                }
+                active
+            }
             deliver {
                 loading = false
                 if (
@@ -80,6 +94,13 @@ class BackgroundReceptionViewModel(
                         session.state.plan?.sessionId != previous
                 )
                     return@deliver
+                if (result.isFailure && canRearm) {
+                    rearmAttempts = (rearmAttempts + 1).coerceAtMost(5)
+                    rearmRetryAt = clock() + (5000L shl rearmAttempts)
+                } else if (result.isSuccess) {
+                    rearmAttempts = 0
+                    rearmRetryAt = 0L
+                }
                 result.fold(
                     { received ->
                         publish(state.copy(unavailable = received?.mode == "EXTERNAL_PLAYER"))
@@ -151,7 +172,10 @@ class BackgroundReceptionViewModel(
     fun reset() {
         generation++
         mediaListening = false
+        desiredMediaProvider = ""
         castListening = false
+        rearmAttempts = 0
+        rearmRetryAt = 0L
         resetRecovery("")
         publish(BackgroundReception())
     }

@@ -2,10 +2,17 @@ package io.github.diegog0477.zombiebox.client.features.mirroring.domain.reposito
 
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.ReceiverPlan
 
+class ReceiverClaimConflict : Exception()
+
 interface ReceiverRepository {
     fun mediaProvider(): String
 
     fun selectMediaProvider(provider: String)
+
+    /** Recover this device's prior explicit choice without replacing another owner. */
+    fun rearmMediaProvider(provider: String) {
+        selectMediaProvider(provider)
+    }
 
     fun command(action: String)
 

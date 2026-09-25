@@ -9,7 +9,20 @@ import org.json.JSONObject
 
 class GatewayReceiverRepository(private val api: GatewayApi) : ReceiverRepository {
     override fun mediaProvider(): String =
-        api.request("GET", "/v1/media-receiver").optString("provider")
+        try {
+            api.request("GET", "/v1/media-receiver").optString("provider")
+        } catch (error: GatewayFailure) {
+            if (error.status == 404) "" else throw error
+        }
+
+    override fun rearmMediaProvider(provider: String) {
+        require(provider in listOf("spotify", "airplay", "auto", "universal"))
+        api.request(
+            "PUT",
+            "/v1/media-receiver",
+            JSONObject().put("provider", provider).put("replaceExisting", false),
+        )
+    }
 
     override fun selectMediaProvider(provider: String) {
         if (provider == "universal") {

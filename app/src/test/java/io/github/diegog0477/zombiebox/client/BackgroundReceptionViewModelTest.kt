@@ -18,6 +18,8 @@ class BackgroundReceptionViewModelTest {
         var unavailable = false
         var remote: ReceiverPlan? = null
         var standby = 0
+        var claim = ""
+        var rearms = 0
         val work = ArrayList<() -> Unit>()
         val played = ArrayList<String>()
         val stopped = ArrayList<String>()
@@ -59,7 +61,13 @@ class BackgroundReceptionViewModelTest {
                         return remote
                     }
 
-                    override fun mediaProvider() = error("unexpected settings read")
+                    override fun mediaProvider() = claim
+
+                    override fun rearmMediaProvider(provider: String) {
+                        assertEquals("auto", provider)
+                        rearms++
+                        claim = provider
+                    }
 
                     override fun selectMediaProvider(provider: String) =
                         error("must not reclaim authority")
@@ -118,6 +126,7 @@ class BackgroundReceptionViewModelTest {
         }
 
         fun arm() {
+            claim = "auto"
             model.configure(mediaProvider = "auto")
             model.foreground(false)
         }
@@ -177,6 +186,19 @@ class BackgroundReceptionViewModelTest {
         assertNull(f.session.state.plan)
         assertFalse(f.model.state.unavailable)
         assertTrue(f.model.state.enabled)
+    }
+
+    @Test
+    fun lostClaimRearmsConfiguredReceiverWithoutTakingAnotherOwner() {
+        val f = Fixture()
+        f.arm()
+        f.claim = ""
+        f.poll()
+        assertEquals(1, f.rearms)
+        assertEquals("auto", f.claim)
+        f.claim = "airplay"
+        f.poll()
+        assertEquals(1, f.rearms)
     }
 
     @Test

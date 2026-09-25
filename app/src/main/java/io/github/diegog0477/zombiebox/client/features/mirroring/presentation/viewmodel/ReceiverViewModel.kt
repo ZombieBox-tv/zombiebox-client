@@ -4,6 +4,7 @@ import io.github.diegog0477.zombiebox.client.core.presentation.ScreenTasks
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.PlaybackContext
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.ReceiverChange
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.ReceiverPlan
+import io.github.diegog0477.zombiebox.client.features.mirroring.domain.repository.ReceiverClaimConflict
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.repository.ReceiverRepository
 
 /** One foreground poll at a time; network errors preserve the last confirmed session. */
@@ -22,6 +23,7 @@ class ReceiverViewModel(
         settingsTasks.run(
             { repository.selectMediaProvider(provider) },
             {
+                setDesiredMediaProvider(provider)
                 done()
                 refresh()
             },
@@ -51,6 +53,19 @@ class ReceiverViewModel(
         )
 
     var observer: ((ReceiverPlan?) -> Unit)? = null
+    var rearmFailure: ((Exception) -> Unit)? = null
+    private var desiredMediaProvider = ""
+    private var rearmAttempts = 0
+    private var rearmRetryAt = 0L
+
+    fun setDesiredMediaProvider(provider: String) {
+        require(provider.isEmpty() || provider in listOf("spotify", "airplay", "auto", "universal"))
+        if (desiredMediaProvider == provider) return
+        desiredMediaProvider = provider
+        rearmAttempts = 0
+        rearmRetryAt = 0L
+    }
+
     private var generation = 0
     private var loading = false
     private var closed = false
@@ -144,9 +159,27 @@ class ReceiverViewModel(
         val request = ++generation
         val ignored = dismissed
         val finished = completed
+        val desired = desiredMediaProvider
+        val canRearm = desired.isNotEmpty() && clock() >= rearmRetryAt
         execute {
             try {
                 var plan = repository.active()
+                var claimError: Exception? = null
+                var rearmed = false
+                if (plan == null && canRearm) {
+                    try {
+                        val provider = repository.mediaProvider()
+                        if (provider.isEmpty()) {
+                            repository.rearmMediaProvider(desired)
+                            rearmed = true
+                            plan = repository.active()
+                        } else if (provider != desired) {
+                            claimError = ReceiverClaimConflict()
+                        }
+                    } catch (error: Exception) {
+                        claimError = error
+                    }
+                }
                 if (plan?.sessionId == ignored) {
                     repository.stop(ignored)
                     plan = null
@@ -155,6 +188,14 @@ class ReceiverViewModel(
                 deliver {
                     if (!closed && request == generation) {
                         loading = false
+                        if (rearmed) {
+                            rearmAttempts = 0
+                            rearmRetryAt = 0L
+                        } else if (claimError != null) {
+                            rearmAttempts = (rearmAttempts + 1).coerceAtMost(5)
+                            rearmRetryAt = clock() + (5000L shl rearmAttempts)
+                            claimError?.let { rearmFailure?.invoke(it) }
+                        }
                         if (result == null || result.sessionId != finished) observer?.invoke(result)
                     }
                 }
@@ -179,5 +220,6 @@ class ReceiverViewModel(
         closed = true
         reset()
         observer = null
+        rearmFailure = null
     }
 }

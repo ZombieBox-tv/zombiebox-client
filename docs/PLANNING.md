@@ -1,5 +1,21 @@
 # zombiebox-client: component work
 
+## dev.52 player controls and receiver continuity
+
+Use a transient fullscreen TV chrome with immediate play/pause feedback, D-pad
+quality choices, current-video details and paged related YouTube items. Preserve
+queue, incoming-receiver ownership, position and paused state when switching
+quality. Keep explicit YouTube and media-receiver intent across lease loss and
+service configuration while never replacing another device's claim. JVM tests,
+lint and release assembly pass. A locally signed dev.52 update installed over
+dev.51 on the selected Vizio/API13 with the same certificate and retained data;
+Home and the YouTube feed rendered and responded to D-pad navigation. The
+fullscreen quality dialog opened from its D-pad gear, but this played source
+offered Auto only; manual switching, related-item relevance, Spotify
+audio/artwork, AirPlay media
+and all receiver-recovery paths still need physical interaction. No product
+milestone closes.
+
 ## dev.51 provider navigation and receiver account states
 
 Use full-screen, dark D-pad search for catalog providers and guard unsupported

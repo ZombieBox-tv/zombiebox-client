@@ -27,9 +27,23 @@ class YouTubeReceptionViewModel(
 
     init {
         lease.command = ::receive
-        lease.observer = { publish() }
-        // Expiry can mean another client took ownership. Never reclaim it automatically.
-        lease.expired = { disable() }
+        lease.observer = {
+            if (lease.receiver != null) {
+                attempts = 0
+                retryAt = 0
+            }
+            publish()
+        }
+        // A lost lease is transient; explicit receiver intent survives it. Open never
+        // replaces another owner's lease, so a conflict remains visible as failed.
+        lease.expired = {
+            resolver.stop("", null)
+            endIncoming()
+            attempts = 0
+            retryAt = clock() + 10_000L
+            playbackFailed(YouTubePlaybackIssue.UNAVAILABLE)
+            publish()
+        }
     }
 
     private fun publish() {
@@ -59,8 +73,8 @@ class YouTubeReceptionViewModel(
     fun tick() {
         if (closed || !state.enabled) return
         if (lease.receiver != null) lease.tick()
-        else if (attempts < 3 && clock() >= retryAt) {
-            attempts++
+        else if (clock() >= retryAt) {
+            attempts = (attempts + 1).coerceAtMost(5)
             retryAt = clock() + (5000L shl attempts)
             lease.open()
         }

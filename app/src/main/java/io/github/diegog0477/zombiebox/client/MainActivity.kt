@@ -49,9 +49,11 @@ import io.github.diegog0477.zombiebox.client.features.mirroring.data.GatewayRece
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.PlaybackContext
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.ReceiverChange
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.ReceiverPlan
+import io.github.diegog0477.zombiebox.client.features.mirroring.domain.repository.ReceiverClaimConflict
 import io.github.diegog0477.zombiebox.client.features.mirroring.presentation.ui.MediaReceiverDialog
 import io.github.diegog0477.zombiebox.client.features.mirroring.presentation.viewmodel.ReceiverViewModel
 import io.github.diegog0477.zombiebox.client.features.playback.data.GatewayPlaybackRepository
+import io.github.diegog0477.zombiebox.client.features.playback.data.GatewayQualityRepository
 import io.github.diegog0477.zombiebox.client.features.playback.data.GatewayTracksRepository
 import io.github.diegog0477.zombiebox.client.features.playback.domain.model.PlaybackPlan
 import io.github.diegog0477.zombiebox.client.features.playback.domain.model.PlaybackProgress
@@ -62,6 +64,7 @@ import io.github.diegog0477.zombiebox.client.features.playback.platform.Playback
 import io.github.diegog0477.zombiebox.client.features.playback.platform.PlaybackNotifications
 import io.github.diegog0477.zombiebox.client.features.playback.platform.SurfaceEvidence
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.PlaybackFailureDialog
+import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.QualityDialog
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.SurfaceOutputView
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.TracksDialog
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.TvPlayerActions
@@ -69,6 +72,7 @@ import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.T
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.VideoOutputFactory
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.VideoOutputView
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.viewmodel.PlaybackViewModel
+import io.github.diegog0477.zombiebox.client.features.playback.presentation.viewmodel.QualityViewModel
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.viewmodel.TracksViewModel
 import io.github.diegog0477.zombiebox.client.features.services.presentation.ui.ServicesActivity
 import io.github.diegog0477.zombiebox.client.features.settings.data.GatewaySettingsRepository
@@ -77,6 +81,8 @@ import io.github.diegog0477.zombiebox.client.features.settings.presentation.ui.S
 import io.github.diegog0477.zombiebox.client.features.settings.presentation.ui.SettingsDialogs
 import io.github.diegog0477.zombiebox.client.features.settings.presentation.ui.TvChoicePanel
 import io.github.diegog0477.zombiebox.client.features.settings.presentation.viewmodel.SettingsViewModel
+import io.github.diegog0477.zombiebox.client.features.youtube.data.GatewayYouTubeRelatedRepository
+import io.github.diegog0477.zombiebox.client.features.youtube.presentation.viewmodel.YouTubeRelatedViewModel
 import io.github.diegog0477.zombiebox.client.features.youtubereceiver.presentation.ui.YouTubeReceiverPanel
 import io.github.diegog0477.zombiebox.shared.GatewayApi
 import io.github.diegog0477.zombiebox.shared.GatewayDiscovery
@@ -148,6 +154,23 @@ class MainActivity : Activity() {
             { work -> handler.post { work() } },
         )
     }
+    private val qualityRepository by lazy { GatewayQualityRepository(api) }
+    private val relatedModel by lazy {
+        YouTubeRelatedViewModel(
+            GatewayYouTubeRelatedRepository(api),
+            { work -> worker.execute { work() } },
+            { work -> handler.post { work() } },
+        )
+    }
+    private val qualityModel by lazy {
+        QualityViewModel(
+            qualityRepository,
+            { work -> worker.execute { work() } },
+            { work -> handler.post { work() } },
+        )
+    }
+    private var loadingMoreRelated = false
+    private var chromeRevealedOnSelect = false
     private lateinit var subtitleText: TextView
     private var timelineOffset = 0
     private var playbackSeekable = true
@@ -503,6 +526,7 @@ class MainActivity : Activity() {
                 { done -> uiHandler.post { done() } },
             )
         receiverViewModel.observer = { plan -> receiveCast(plan) }
+        receiverViewModel.rearmFailure = ::error
         handler.post(receiverTick)
         homeViewModel.observer = { state ->
             if (!closed) {
@@ -553,7 +577,8 @@ class MainActivity : Activity() {
 
     private fun error(e: Exception) {
         val message =
-            if (e is GatewayFailure)
+            if (e is ReceiverClaimConflict) getString(R.string.error_conflict)
+            else if (e is GatewayFailure)
                 getString(
                     when (e.status) {
                         401 -> R.string.error_pairing
@@ -763,6 +788,11 @@ class MainActivity : Activity() {
     }
 
     private fun applyMediaReceiverSelection(provider: String) {
+        getSharedPreferences("zombie", MODE_PRIVATE)
+            .edit()
+            .putString(receiverIntentKey(), provider)
+            .apply()
+        receiverViewModel.setDesiredMediaProvider(provider)
         player.configureReceivers(mediaProvider = provider)
         universalReception = provider == "universal"
         if (universalReception) player.enableYouTube() else player.disableYouTube()
@@ -813,6 +843,7 @@ class MainActivity : Activity() {
     private fun updateReceiver(plan: ReceiverPlan) {
         currentItem = plan.item
         receiverState = plan.state
+        if (plan.state.isNotEmpty()) lastState = plan.state
         player.receiverStatus(plan.item, plan.state)
         itemTitle = plan.item?.title ?: getString(R.string.screen_mirroring)
         now.text =
@@ -999,6 +1030,8 @@ class MainActivity : Activity() {
                     playPause = { togglePlayback() },
                     next = { player.next() },
                     seekForward = { seek(10000) },
+                    description = { playerChrome.focusDetails() },
+                    quality = { showQuality() },
                     audioTracks = { showTracks("audio") },
                     subtitles = { showTracks("subtitle") },
                     minimize = { togglePlayerSize() },
@@ -1007,6 +1040,7 @@ class MainActivity : Activity() {
                     playItem = { item ->
                         startPlayback(item, fullscreen = true, catalogOrigin = true)
                     },
+                    loadMoreRelated = { loadMoreYouTubeRelated() },
                 ),
             )
         playerControls = playerChrome.videoControlsRow
@@ -1046,8 +1080,8 @@ class MainActivity : Activity() {
         setSeekable(plan.seekable && !plan.live)
     }
 
-    private fun retainPlan(plan: PlaybackPlan) {
-        currentItem?.let { player.adopt(plan, it) }
+    private fun retainPlan(plan: PlaybackPlan, incoming: Boolean = false, paused: Boolean = false) {
+        currentItem?.let { player.adopt(plan, it, incoming = incoming, paused = paused) }
     }
 
     private fun restorePlayback(state: PlaybackSession) {
@@ -1101,9 +1135,49 @@ class MainActivity : Activity() {
 
     private fun attachTracks(plan: PlaybackPlan, subtitleId: Int? = plan.subtitleId) {
         tracksModel.attach(plan.sessionId)
+        qualityModel.attach(plan.sessionId)
         if (subtitleId != null) {
             tracksModel.subtitles(subtitleId, { player.subtitle(tracksModel.subtitleId) }, {})
         }
+    }
+
+    private fun showQuality() {
+        val requestedSession = session
+        if (requestedSession.isEmpty()) return
+        qualityModel.inventory(
+            { inventory ->
+                QualityDialog(this).show(inventory) { selectedId ->
+                    if (
+                        requestedSession == session &&
+                            selectedId.isNotEmpty() &&
+                            selectedId != inventory.selectedId
+                    ) {
+                        val paused = lastState != "PLAYING"
+                        val incoming =
+                            youtubeIncoming || receiverViewModel.activeSession == requestedSession
+                        qualityModel.select(
+                            selectedId,
+                            lastPosition,
+                            { plan ->
+                                adoptPlan(plan)
+                                retainPlan(plan, incoming, paused)
+                                attachTracks(plan)
+                                lastReport = 0
+                                player.play(
+                                    stream,
+                                    plan.resumePositionMs,
+                                    !paused,
+                                    currentItem?.kind != "audio",
+                                    playbackSeekable,
+                                )
+                            },
+                            ::error,
+                        )
+                    }
+                }
+            },
+            ::error,
+        )
     }
 
     private fun showTracks(kind: String) {
@@ -1151,6 +1225,7 @@ class MainActivity : Activity() {
     }
 
     private fun setPlaying(playing: Boolean) {
+        if (::playerChrome.isInitialized) playerChrome.setOptimisticPlaying(playing)
         if (currentItem?.provider == "spotify" && receiverViewModel.activeSession == session) {
             receiverViewModel.command(if (playing) "resume" else "pause", ::error)
         } else if (playing) {
@@ -1160,10 +1235,21 @@ class MainActivity : Activity() {
 
     private fun togglePlayback() {
         if (currentItem?.provider == "spotify" && receiverViewModel.activeSession == session) {
-            receiverViewModel.command(if (receiverState == "PAUSED") "resume" else "pause", ::error)
+            val target =
+                if (::playerChrome.isInitialized)
+                    playerChrome.optimisticPlaying() ?: (receiverState == "PAUSED")
+                else receiverState == "PAUSED"
+            if (::playerChrome.isInitialized) playerChrome.setOptimisticPlaying(target)
+            receiverViewModel.command(if (target) "resume" else "pause", ::error)
             return
         }
-        if (session.isNotEmpty() && foreground && audioController.acquire()) player.toggle()
+        if (session.isNotEmpty() && foreground && audioController.acquire()) {
+            if (::playerChrome.isInitialized) {
+                val target = playerChrome.optimisticPlaying() ?: (lastState != "PLAYING")
+                playerChrome.setOptimisticPlaying(target)
+            }
+            player.toggle()
+        }
     }
 
     private fun startPlayback(
@@ -1342,44 +1428,69 @@ class MainActivity : Activity() {
     }
 
     private fun getYouTubeRelated(): List<MediaItem> {
-        if (currentItem?.provider != "youtube") return emptyList()
-        val currentId = currentItem?.id ?: ""
-        val catalogItems =
-            catalogModel.screen?.page?.items?.filter {
-                it.id != currentId && (it.provider.isEmpty() || it.provider == "youtube")
-            }
-        if (!catalogItems.isNullOrEmpty()) return catalogItems
-        val snapshotItems =
-            snapshot.sections
-                .filter { section ->
-                    section.id.contains("youtube", ignoreCase = true) ||
-                        section.items.any { it.provider == "youtube" }
+        return if (currentItem?.provider == "youtube") relatedModel.items else emptyList()
+    }
+
+    private fun loadMoreYouTubeRelated() {
+        if (loadingMoreRelated || currentItem?.provider != "youtube" || !relatedModel.hasMore)
+            return
+        loadingMoreRelated = true
+        val currentId = currentItem?.id
+        val existingCount = relatedModel.items.size
+        relatedModel.loadMore {
+            loadingMoreRelated = false
+            if (::playerChrome.isInitialized && currentItem?.id == currentId) {
+                val additions = relatedModel.items.drop(existingCount)
+                if (additions.isNotEmpty()) {
+                    playerChrome.appendRelatedCards(additions, relatedModel.hasMore)
+                    playerFocus.rebuild(playerChrome.focusRows(), false)
                 }
-                .flatMap { it.items }
-                .filter { it.id != currentId }
-                .distinctBy { it.id }
-        if (snapshotItems.isNotEmpty()) return snapshotItems
-        return snapshot.sections
-            .flatMap { it.items }
-            .filter { it.id != currentId && it.provider == "youtube" }
-            .distinctBy { it.id }
+            }
+        }
     }
 
     private fun updatePlayerChrome() {
         if (!::playerChrome.isInitialized) return
+        if (currentItem?.id?.removePrefix("youtube-") != relatedModel.videoId) {
+            loadingMoreRelated = false
+        }
+        if (currentItem?.provider == "youtube") {
+            relatedModel.attach(currentItem?.id ?: "") {
+                if (!closed && full && currentItem?.provider == "youtube") updatePlayerChrome()
+            }
+        } else {
+            relatedModel.attach("") {}
+        }
         val isAudio = currentItem?.kind == "audio" || (currentItem?.provider == "spotify")
         val accent = contextAccent()
         val canPrev = currentItem?.provider == "spotify"
         val canNext = ::nextButton.isInitialized && nextButton.isEnabled
         val related = if (currentItem?.provider == "youtube") getYouTubeRelated() else emptyList()
+        val hasMore = relatedModel.hasMore
+        val displayItem =
+            currentItem?.let { item ->
+                val details = if (item.provider == "youtube") relatedModel.currentVideo else null
+                if (details != null && details.id == item.id)
+                    item.copy(
+                        title =
+                            item.title.takeUnless { it.isBlank() || it == "YouTube" }
+                                ?: details.title,
+                        subtitle = item.subtitle.ifBlank { details.subtitle },
+                        description = item.description.ifBlank { details.description },
+                        durationMs =
+                            if (item.durationMs > 0) item.durationMs else details.durationMs,
+                    )
+                else item
+            }
         playerChrome.bindSession(
-            item = currentItem,
+            item = displayItem,
             isAudio = isAudio,
             accent = accent,
             canPrevious = canPrev,
             canNext = canNext,
             seekable = playbackSeekable,
             relatedItems = related,
+            hasMoreRelated = hasMore,
         )
         playerChrome.updateProgress(lastState, lastPosition, lastDuration)
         playerFocus.rebuild(playerChrome.focusRows(), false)
@@ -1404,6 +1515,9 @@ class MainActivity : Activity() {
             content.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
             playerLayer.bringToFront()
             playerFocus.restore()
+            if (::playerChrome.isInitialized && !playerChrome.hasFocus()) {
+                playerChrome.primaryControl().requestFocus()
+            }
         } else {
             content.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
             if (::playerChrome.isInitialized) playerChrome.visibility = View.GONE
@@ -1461,6 +1575,7 @@ class MainActivity : Activity() {
         session = ""
         stream = ""
         tracksModel.attach("")
+        qualityModel.attach("")
         subtitleText.text = ""
         subtitleText.visibility = View.GONE
         timelineOffset = 0
@@ -1576,8 +1691,88 @@ class MainActivity : Activity() {
         if (currentFocus !is EditText) {
             val isPlaying = session.isNotEmpty()
             if (full && isPlaying) {
-                if (event.action == KeyEvent.ACTION_DOWN && playerFocus.move(key, currentFocus))
-                    return true
+                if (
+                    ::playerChrome.isInitialized &&
+                        !playerChrome.isChromeVisible &&
+                        currentItem?.kind != "audio"
+                ) {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        if (
+                            key in
+                                intArrayOf(
+                                    KeyEvent.KEYCODE_DPAD_CENTER,
+                                    KeyEvent.KEYCODE_ENTER,
+                                    KeyEvent.KEYCODE_NUMPAD_ENTER,
+                                    KeyEvent.KEYCODE_DPAD_UP,
+                                    KeyEvent.KEYCODE_DPAD_DOWN,
+                                    KeyEvent.KEYCODE_DPAD_LEFT,
+                                    KeyEvent.KEYCODE_DPAD_RIGHT,
+                                )
+                        ) {
+                            if (
+                                key in
+                                    intArrayOf(
+                                        KeyEvent.KEYCODE_DPAD_CENTER,
+                                        KeyEvent.KEYCODE_ENTER,
+                                        KeyEvent.KEYCODE_NUMPAD_ENTER,
+                                    )
+                            ) {
+                                chromeRevealedOnSelect = true
+                            }
+                            playerChrome.showChrome()
+                            playerFocus.restore()
+                            if (!playerChrome.hasFocus()) {
+                                playerChrome.primaryControl().requestFocus()
+                            }
+                            return true
+                        }
+                    } else if (event.action == KeyEvent.ACTION_UP) {
+                        if (
+                            chromeRevealedOnSelect &&
+                                key in
+                                    intArrayOf(
+                                        KeyEvent.KEYCODE_DPAD_CENTER,
+                                        KeyEvent.KEYCODE_ENTER,
+                                        KeyEvent.KEYCODE_NUMPAD_ENTER,
+                                    )
+                        ) {
+                            chromeRevealedOnSelect = false
+                            return true
+                        }
+                    }
+                }
+
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    if (::playerChrome.isInitialized) {
+                        playerChrome.resetInactivityTimer()
+                        if (
+                            currentFocus === playerChrome.detailsView &&
+                                key == KeyEvent.KEYCODE_DPAD_UP &&
+                                playerChrome.detailsView.scrollY > 0
+                        ) {
+                            playerChrome.detailsView.arrowScroll(View.FOCUS_UP)
+                            return true
+                        }
+                        if (
+                            currentFocus === playerChrome.detailsView &&
+                                key == KeyEvent.KEYCODE_DPAD_DOWN
+                        ) {
+                            if (playerChrome.detailsView.arrowScroll(View.FOCUS_DOWN)) return true
+                        }
+                    }
+                    if (playerFocus.move(key, currentFocus)) {
+                        return true
+                    }
+                    if (
+                        ::playerChrome.isInitialized &&
+                            key == KeyEvent.KEYCODE_DPAD_UP &&
+                            playerChrome.isChromeVisible &&
+                            currentItem?.kind != "audio"
+                    ) {
+                        playerChrome.hideChrome()
+                        return true
+                    }
+                }
             } else {
                 if (content.isRightRailFocused()) {
                     if (event.action == KeyEvent.ACTION_DOWN) {
@@ -1679,6 +1874,16 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        if (
+            full &&
+                session.isNotEmpty() &&
+                currentItem?.kind != "audio" &&
+                ::playerChrome.isInitialized &&
+                playerChrome.isChromeVisible
+        ) {
+            playerChrome.hideChrome()
+            return
+        }
         if (full) togglePlayerSize()
         else if (content.isRightRailFocused()) {
             content.restoreMainContentFocus()
@@ -1691,11 +1896,19 @@ class MainActivity : Activity() {
     private fun refreshReceiverListening() {
         val profile = Triple(api.base, api.device, api.token)
         fun current() = !closed && foreground && profile == Triple(api.base, api.device, api.token)
+        val preferences = getSharedPreferences("zombie", MODE_PRIVATE)
+        val savedProvider = preferences.getString(receiverIntentKey(), "") ?: ""
+        receiverViewModel.setDesiredMediaProvider(savedProvider)
         receiverViewModel.readMediaProvider(
             { provider ->
                 if (current()) {
-                    universalReception = provider == "universal"
-                    player.configureReceivers(mediaProvider = provider)
+                    val effective = if (provider.isEmpty()) savedProvider else provider
+                    if (savedProvider.isEmpty() && provider.isNotEmpty()) {
+                        preferences.edit().putString(receiverIntentKey(), provider).apply()
+                        receiverViewModel.setDesiredMediaProvider(provider)
+                    }
+                    universalReception = effective == "universal"
+                    player.configureReceivers(mediaProvider = effective)
                     if (universalReception) player.enableYouTube()
                 }
             },
@@ -1706,6 +1919,8 @@ class MainActivity : Activity() {
             {},
         )
     }
+
+    private fun receiverIntentKey() = "mediaReceiver:${api.base}:${api.device}"
 
     override fun onResume() {
         super.onResume()
@@ -1769,6 +1984,8 @@ class MainActivity : Activity() {
         searchModel.close()
         playbackModel.close()
         tracksModel.close()
+        qualityModel.close()
+        relatedModel.close()
         diagnosticsModel?.close()
         artwork.close()
         artworkDecoder.close()

@@ -57,6 +57,30 @@ class PlaybackService : Service() {
 
     var youtubeListener: ((YouTubeReception) -> Unit)? = null
     private var profile = Triple("", "", "")
+
+    private fun youtubeIntentKey(base: String, device: String) = "youtubeReceiver:$base:$device"
+
+    fun enableYouTubeReceiver() {
+        val (base, device, token) = profile
+        if (base.isEmpty() || device.isEmpty() || token.isEmpty()) return
+        getSharedPreferences("zombie", MODE_PRIVATE)
+            .edit()
+            .putBoolean(youtubeIntentKey(base, device), true)
+            .apply()
+        youtube.enable()
+    }
+
+    fun disableYouTubeReceiver() {
+        val (base, device) = profile
+        if (base.isNotEmpty() && device.isNotEmpty()) {
+            getSharedPreferences("zombie", MODE_PRIVATE)
+                .edit()
+                .putBoolean(youtubeIntentKey(base, device), false)
+                .apply()
+        }
+        youtube.disable()
+    }
+
     private val youtubePoll =
         object : Runnable {
             override fun run() {
@@ -206,6 +230,18 @@ class PlaybackService : Service() {
                 preferences.getString("playbackMode", "AUTO") == "AUTO"
         // Serialize profile changes after queued writes/revocation for the old gateway.
         worker.execute { api.configure(base, device, token) }
+        if (base.isNotEmpty() && device.isNotEmpty() && token.isNotEmpty()) {
+            val savedProvider = preferences.getString("mediaReceiver:$base:$device", "") ?: ""
+            backgroundReception.configure(mediaProvider = savedProvider)
+        }
+        if (
+            base.isNotEmpty() &&
+                device.isNotEmpty() &&
+                token.isNotEmpty() &&
+                preferences.getBoolean(youtubeIntentKey(base, device), false)
+        ) {
+            youtube.enable()
+        }
     }
 
     fun refreshFocus() {
@@ -276,8 +312,9 @@ class PlaybackService : Service() {
         queue: List<MediaItem>?,
         cursor: QueueCursor?,
         incoming: Boolean,
+        paused: Boolean,
     ) {
-        model.adopt(plan, item, queue, cursor, incoming)
+        model.adopt(plan, item, queue, cursor, incoming, paused = paused)
     }
 
     private fun playPlan(plan: PlaybackPlan, item: MediaItem) {
@@ -330,14 +367,13 @@ class PlaybackService : Service() {
         )
 
     private fun stopFromControls() {
-        backgroundReception.reset()
         if (model.state.incoming)
             worker.execute {
                 try {
                     GatewayReceiverRepository(api).cancelQueue()
                 } catch (_: Exception) {}
             }
-        youtube.disable()
+        // Stop the current item only. Receiver listening is a separate user choice.
         model.stop()
     }
 

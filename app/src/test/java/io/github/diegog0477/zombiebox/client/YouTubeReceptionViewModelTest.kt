@@ -153,17 +153,26 @@ class YouTubeReceptionViewModelTest {
     }
 
     @Test
-    fun revokedLeaseStopsOwnedPlaybackButDoesNotReclaimOwnership() {
+    fun expiredLeasePreservesIntentAndRetriesWithoutReplacingAnotherOwner() {
         val f = Fixture()
         f.reception.enable()
         f.command("play", "play")
         f.expired = true
         f.reception.tick()
-        assertFalse(f.reception.state.enabled)
+        assertTrue(f.reception.state.enabled)
         assertNull(f.session.state.plan)
-        f.clock = 999999L
-        repeat(10) { f.reception.tick() }
+        f.clock = 9_999L
+        f.reception.tick()
         assertEquals(1, f.opens)
+        f.expired = false
+        f.clock = 10_001L
+        f.reception.tick()
+        assertEquals(2, f.opens)
+        assertTrue(f.reception.state.enabled)
+        f.reception.disable()
+        f.clock = 999_999L
+        f.reception.tick()
+        assertEquals(2, f.opens)
     }
 
     @Test
@@ -256,7 +265,7 @@ class YouTubeReceptionViewModelTest {
     }
 
     @Test
-    fun failedOpenRetriesAreBoundedAndManualEnableCanRetry() {
+    fun failedOpenUsesBackoffAndManualEnableCanRetryImmediately() {
         val f = Fixture()
         f.unavailable = true
         f.reception.enable()
@@ -264,11 +273,12 @@ class YouTubeReceptionViewModelTest {
             f.clock += 60000
             f.reception.tick()
         }
-        assertEquals(3, f.opens)
+        assertTrue(f.opens in 3..6)
         assertTrue(f.reception.state.failed)
+        val attemptsBeforeManualRetry = f.opens
         f.unavailable = false
         f.reception.enable()
         assertNotNull(f.reception.state.receiver)
-        assertEquals(4, f.opens)
+        assertEquals(attemptsBeforeManualRetry + 1, f.opens)
     }
 }

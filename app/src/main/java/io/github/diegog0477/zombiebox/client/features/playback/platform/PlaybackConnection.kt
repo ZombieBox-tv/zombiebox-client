@@ -41,12 +41,12 @@ class PlaybackConnection(
 
     fun enableYouTube() = command {
         if (visible) {
-            it.youtube.enable()
+            it.enableYouTubeReceiver()
             context.startService(Intent(context, PlaybackService::class.java))
         }
     }
 
-    fun disableYouTube() = command { it.youtube.disable() }
+    fun disableYouTube() = command { it.disableYouTubeReceiver() }
 
     fun standbyYouTube() = command { it.youtube.standby() }
 
@@ -112,12 +112,13 @@ class PlaybackConnection(
         queue: List<MediaItem>? = null,
         cursor: QueueCursor? = null,
         incoming: Boolean = false,
+        paused: Boolean = false,
     ) = command {
         if (!visible && it.model.state.plan == null) {
             it.discard(plan, incoming)
             return@command
         }
-        it.adopt(plan, item, queue, cursor, incoming)
+        it.adopt(plan, item, queue, cursor, incoming, paused)
         // Invoked from a visible Activity; promotion happens synchronously in adopt.
         context.startService(Intent(context, PlaybackService::class.java))
     }

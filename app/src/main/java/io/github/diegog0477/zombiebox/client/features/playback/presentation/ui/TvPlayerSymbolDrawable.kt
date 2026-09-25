@@ -21,6 +21,8 @@ enum class TvPlayerSymbol {
     MINIMIZE,
     EXTERNAL,
     STOP,
+    QUALITY,
+    DESCRIPTION,
 }
 
 /** Code-drawn TV player symbols for API 9+ compatibility without XML vectors or raster images. */
@@ -166,6 +168,26 @@ class TvPlayerSymbolDrawable(var symbol: TvPlayerSymbol, var color: Int = Color.
             }
             TvPlayerSymbol.STOP -> {
                 canvas.drawRect(6f, 6f, 18f, 18f, fillPaint)
+            }
+            TvPlayerSymbol.QUALITY -> {
+                canvas.drawCircle(12f, 12f, 5.5f, strokePaint)
+                canvas.drawCircle(12f, 12f, 2.2f, fillPaint)
+                for (i in 0 until 8) {
+                    val angle = (i * 45).toDouble() * Math.PI / 180.0
+                    val cosA = Math.cos(angle).toFloat()
+                    val sinA = Math.sin(angle).toFloat()
+                    val startX = 12f + 5.5f * cosA
+                    val startY = 12f + 5.5f * sinA
+                    val endX = 12f + 8.5f * cosA
+                    val endY = 12f + 8.5f * sinA
+                    canvas.drawLine(startX, startY, endX, endY, strokePaint)
+                }
+            }
+            TvPlayerSymbol.DESCRIPTION -> {
+                canvas.drawRoundRect(RectF(4f, 4f, 20f, 20f), 2f, 2f, strokePaint)
+                canvas.drawLine(7f, 8f, 17f, 8f, strokePaint)
+                canvas.drawLine(7f, 12f, 17f, 12f, strokePaint)
+                canvas.drawLine(7f, 16f, 13f, 16f, strokePaint)
             }
         }
         canvas.restoreToCount(save)
