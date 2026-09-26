@@ -14,6 +14,7 @@ class PlaybackRecovery {
         when (mode) {
             "DIRECT_PLAY" -> if (positionMs > 0) "TRANSCODE" else "REMUX"
             "REMUX" -> "TRANSCODE"
+            "HYBRID" -> "TRANSCODE"
             else -> null
         }
 
