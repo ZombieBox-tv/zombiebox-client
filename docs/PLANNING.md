@@ -1,5 +1,18 @@
 # zombiebox-client: component work
 
+## Unreleased signed dev.71 artwork candidate
+
+Ordinary Home rerenders now retain pending artwork requests instead of
+invalidating callbacks and clearing the image worker queue. The artwork model
+limits work to two submitted and 22 queued requests, prioritizes active audio
+artwork over posters, and reports bounded refusals to the view. Gateway/token
+changes still fence old results and clear scoped caches. The JVM suite, release
+build and lint passed. The APK has package ID
+`io.github.diegog0477.zombiebox.client`, versionCode 71, minSdk 9, one DEX 035,
+no native libraries and v1/v2 signatures from the installed certificate. It
+was installed in place on the selected Vizio/API13 and MainActivity launched.
+Fresh iPad artwork, timeline and control behavior remain physically unverified.
+
 ## Unreleased signed dev.70 QA candidate
 
 Quality inventory network and parsing failures now reach the player error

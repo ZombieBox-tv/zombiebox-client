@@ -118,10 +118,12 @@ class MainActivity : Activity() {
 
     private fun render() {
         val scope = api.base + "\n" + api.token
-        artwork.reset(clearCache = artworkScope != scope)
-        if (artworkScope != scope) artworkDecoder.clear()
-        artworkScope = scope
-        imageWorker.queue.clear()
+        val artworkScopeChanged = artworkScope != scope
+        if (artworkScopeChanged) {
+            artwork.reset(clearCache = true)
+            artworkDecoder.clear()
+            artworkScope = scope
+        }
         content.render(
             snapshot,
             homeViewModel.state.scope,
@@ -129,6 +131,14 @@ class MainActivity : Activity() {
             full && session.isNotEmpty(),
             currentPlaybackSession(),
         )
+        if (artworkScopeChanged && full && ::playerChrome.isInitialized) updatePlayerChrome()
+        if (
+            artworkScopeChanged &&
+                ::receiverArtwork.isInitialized &&
+                receiverArtwork.visibility == View.VISIBLE
+        ) {
+            receiverArtwork.bind(artwork, currentItem?.imageUrl ?: "")
+        }
         content.status(homeViewModel.state.loading, homeViewModel.state.failure != null)
         if (!full && session.isNotEmpty()) content.post { positionDockedVideo() }
     }

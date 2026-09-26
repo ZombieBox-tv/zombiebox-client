@@ -31,7 +31,7 @@ class ArtworkImageView(
         path: String,
         role: ArtworkRequestRole = ArtworkRequestRole.DEFAULT,
     ) {
-        val key = "$role:$path"
+        val key = "${model.scopeRevision}:$role:$path"
         val now = SystemClock.elapsedRealtime()
         if (bound == key) {
             if (path.isEmpty()) return
