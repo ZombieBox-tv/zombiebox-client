@@ -628,6 +628,9 @@
     </string>
     <string name="youtube_home_feed">Home feed from YouTube</string>
     <string name="youtube_activity_feed">Your ZombieBox YouTube watch activity</string>
+    <string name="youtube_title_search_suggestions">
+        Title search suggestions from your ZombieBox watch activity
+    </string>
     <string name="youtube_more_videos">More videos</string>
     <string name="youtube_quality_restarts_from_beginning">
         This device restarts the video at 0:00 when switching to this quality.

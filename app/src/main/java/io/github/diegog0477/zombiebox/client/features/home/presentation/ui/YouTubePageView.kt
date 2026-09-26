@@ -61,6 +61,10 @@ class YouTubePageView(
             snapshot.sections
                 .flatMap { it.items }
                 .filter { it.provider == "youtube" || it.provider.isEmpty() }
+        val hasTitleSuggestions =
+            snapshot.sections.any {
+                it.id == "youtube-watch-title-suggestions" && it.items.isNotEmpty()
+            }
         itemIds.clear()
         items.forEach { item -> itemIds.add(item.id) }
         activityFeed = isHomeFeed && snapshot.youtubeActivityFeed
@@ -120,7 +124,7 @@ class YouTubePageView(
 
         parent.addView(leadRow, LinearLayout.LayoutParams(-1, -2))
         focusRows.add(Pair("youtube:actions", leadRow))
-        if (isHomeFeed) {
+        if (isHomeFeed && !hasTitleSuggestions) {
             parent.addView(
                 ui.text(
                     context.getString(
@@ -158,7 +162,32 @@ class YouTubePageView(
                     widthDp >= 600f -> 2
                     else -> 1
                 }
-            appendRows(parent, items, focusRows, null)
+            if (activityFeed && hasTitleSuggestions) {
+                snapshot.sections.forEach { section ->
+                    val sectionItems =
+                        section.items.filter { it.provider == "youtube" || it.provider.isEmpty() }
+                    if (sectionItems.isNotEmpty()) {
+                        val heading =
+                            when (section.id) {
+                                "youtube-watch-title-suggestions" ->
+                                    R.string.youtube_title_search_suggestions
+                                "youtube-activity" -> R.string.youtube_activity_feed
+                                else -> null
+                            }
+                        if (heading != null) {
+                            parent.addView(
+                                ui.text(context.getString(heading), 12f, ui.muted),
+                                LinearLayout.LayoutParams(-1, -2).apply {
+                                    setMargins(0, ui.dp(8), 0, ui.dp(6))
+                                },
+                            )
+                        }
+                        appendRows(parent, sectionItems, focusRows, null)
+                    }
+                }
+            } else {
+                appendRows(parent, items, focusRows, null)
+            }
             if (isHomeFeed && hasMore()) addLoadMore(parent, focusRows)
         }
     }

@@ -1,5 +1,17 @@
 # zombiebox-client: component work
 
+## Unreleased dev.67 QA candidate
+
+Dev.67 gives the bounded YouTube title-search suggestions their own localized
+heading, separate from the local watch-history rows. It retains the history
+cursor and D-pad prefetch behavior. JVM tests, debug/release build and lint
+pass. The matching certificate signed an in-place update on the selected
+Vizio API 13 with app data preserved. A screenshot of the YouTube tab shows
+the separate title-search heading and suggestion thumbnails. Continuous
+history scrolling and personalized ranking still need physical evaluation. These
+suggestions are title searches based on this Client's activity, not account
+recommendations from YouTube.
+
 ## Unreleased signed dev.66 QA candidate
 
 The Vizio API 13 accepted the dev.66 release APK as an in-place signed update
