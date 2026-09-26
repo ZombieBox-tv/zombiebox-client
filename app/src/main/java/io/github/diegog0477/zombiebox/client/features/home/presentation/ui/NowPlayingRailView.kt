@@ -23,6 +23,7 @@ import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
 import io.github.diegog0477.zombiebox.client.features.artwork.domain.repository.ArtworkRequestRole
 import io.github.diegog0477.zombiebox.client.features.artwork.platform.ArtworkDecoder
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.ArtworkImageView
+import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.artworkIdentity
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel.ArtworkViewModel
 
 /** Semantic model describing the active playback session for Home transport presentation. */
@@ -256,7 +257,7 @@ class NowPlayingRailView(
 
     fun update(session: HomePlaybackSession) {
         val item = session.item
-        val isAudio = item?.kind == "audio"
+        val isAudio = item?.kind == "audio" || item?.provider == "spotify"
         val provider = item?.provider ?: ""
         accentColor = ui.providerAccent(provider)
         providerIcon.bind(provider, accentColor)
@@ -292,18 +293,16 @@ class NowPlayingRailView(
         nextButton.setBackgroundDrawable(controlFocusBackground(accentColor))
         expandButton.setBackgroundDrawable(controlFocusBackground(accentColor))
 
-        if (!item?.imageUrl.isNullOrEmpty()) {
-            artView.visibility = VISIBLE
-            artFallback.visibility = GONE
-            artView.bind(
-                artwork,
-                item?.imageUrl ?: "",
-                if (isAudio) ArtworkRequestRole.AUDIO else ArtworkRequestRole.DEFAULT,
-            )
-        } else {
-            artView.visibility = GONE
-            artFallback.visibility = VISIBLE
-        }
+        val artworkPath = item?.imageUrl ?: ""
+        artView.bind(
+            artwork,
+            artworkPath,
+            if (isAudio) ArtworkRequestRole.AUDIO else ArtworkRequestRole.DEFAULT,
+            if (isAudio) item.artworkIdentity() else null,
+        )
+        val showArtwork = artworkPath.isNotEmpty() || artView.drawable != null
+        artView.visibility = if (showArtwork) VISIBLE else GONE
+        artFallback.visibility = if (showArtwork) GONE else VISIBLE
     }
 
     fun updateProgress(status: String, positionMs: Int, durationMs: Int) {
@@ -454,6 +453,7 @@ class CompactTransportBar(
     fun update(session: HomePlaybackSession) {
         val item = session.item
         val provider = item?.provider ?: ""
+        val isAudio = item?.kind == "audio" || provider == "spotify"
         accentColor = ui.providerAccent(provider)
 
         titleView.text =
@@ -464,12 +464,15 @@ class CompactTransportBar(
         playPauseButton.setBackgroundDrawable(ui.focusBackground(accentColor))
         expandButton.setBackgroundDrawable(ui.focusBackground(accentColor))
 
-        if (!item?.imageUrl.isNullOrEmpty()) {
-            artView.visibility = VISIBLE
-            artView.bind(artwork, item?.imageUrl ?: "")
-        } else {
-            artView.visibility = GONE
-        }
+        val artworkPath = item?.imageUrl ?: ""
+        artView.bind(
+            artwork,
+            artworkPath,
+            if (isAudio) ArtworkRequestRole.AUDIO else ArtworkRequestRole.DEFAULT,
+            if (isAudio) item.artworkIdentity() else null,
+        )
+        artView.visibility =
+            if (artworkPath.isNotEmpty() || artView.drawable != null) VISIBLE else GONE
     }
 
     fun updateProgress(status: String, positionMs: Int, durationMs: Int) {

@@ -23,7 +23,9 @@ import io.github.diegog0477.zombiebox.client.features.airplay.data.GatewayAirPla
 import io.github.diegog0477.zombiebox.client.features.airplay.presentation.ui.AirPlayPairingDialog
 import io.github.diegog0477.zombiebox.client.features.airplay.presentation.viewmodel.AirPlayPairingViewModel
 import io.github.diegog0477.zombiebox.client.features.artwork.data.GatewayArtworkRepository
+import io.github.diegog0477.zombiebox.client.features.artwork.domain.repository.ArtworkRequestRole
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.ArtworkImageView
+import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.artworkIdentity
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel.ArtworkViewModel
 import io.github.diegog0477.zombiebox.client.features.browser.presentation.ui.BrowserActivity
 import io.github.diegog0477.zombiebox.client.features.catalog.data.GatewayCatalogRepository
@@ -137,7 +139,22 @@ class MainActivity : Activity() {
                 ::receiverArtwork.isInitialized &&
                 receiverArtwork.visibility == View.VISIBLE
         ) {
-            receiverArtwork.bind(artwork, currentItem?.imageUrl ?: "")
+            val item = currentItem
+            val isAudioArtwork = item?.kind == "audio" || item?.provider == "spotify"
+            val path = item?.imageUrl ?: ""
+            receiverArtwork.bind(
+                artwork,
+                path,
+                if (isAudioArtwork) {
+                    ArtworkRequestRole.AUDIO
+                } else {
+                    ArtworkRequestRole.DEFAULT
+                },
+                if (isAudioArtwork) item.artworkIdentity() else null,
+            )
+            receiverArtwork.visibility =
+                if (path.isNotEmpty() || receiverArtwork.drawable != null) View.VISIBLE
+                else View.GONE
         }
         content.status(homeViewModel.state.loading, homeViewModel.state.failure != null)
         if (!full && session.isNotEmpty()) content.post { positionDockedVideo() }
@@ -1138,10 +1155,22 @@ class MainActivity : Activity() {
                 .filter { it.isNotEmpty() }
                 .joinToString("\n")
         receiverInfo.visibility = if (plan.fullscreen) View.GONE else View.VISIBLE
+        val isAudioArtwork = plan.item?.kind == "audio" || plan.item?.provider == "spotify"
+        val artworkPath = if (plan.fullscreen) "" else plan.item?.imageUrl ?: ""
+        receiverArtwork.bind(
+            artwork,
+            artworkPath,
+            if (isAudioArtwork) {
+                ArtworkRequestRole.AUDIO
+            } else {
+                ArtworkRequestRole.DEFAULT
+            },
+            if (isAudioArtwork) plan.item.artworkIdentity() else null,
+        )
         receiverArtwork.visibility =
-            if (!plan.fullscreen && !plan.item?.imageUrl.isNullOrEmpty()) View.VISIBLE
+            if (!plan.fullscreen && (artworkPath.isNotEmpty() || receiverArtwork.drawable != null))
+                View.VISIBLE
             else View.GONE
-        receiverArtwork.bind(artwork, if (plan.fullscreen) "" else plan.item?.imageUrl ?: "")
         if (::playerChrome.isInitialized && full) {
             updatePlayerChrome()
         }
