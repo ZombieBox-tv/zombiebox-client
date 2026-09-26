@@ -252,10 +252,7 @@ object ReceiverTimelinePolicy {
         return estimateForDisplay(state, nowElapsedRealtimeMs)
     }
 
-    /**
-     * Retains a continuous display estimate after a sender sample expires. The returned freshness
-     * flag stays false, so an old report is never presented as a current sender measurement.
-     */
+    /** Retains the last supported display position when sender progress expires. */
     fun estimateForDisplay(state: State, nowElapsedRealtimeMs: Long): Position? {
         if (!state.hasAnchor || state.durationMs <= 0) return null
         val position = estimatePosition(state, nowElapsedRealtimeMs) ?: return null
@@ -296,8 +293,24 @@ object ReceiverTimelinePolicy {
 
     private fun estimatePosition(state: State, nowElapsedRealtimeMs: Long): Int? {
         if (!state.hasAnchor || state.durationMs <= 0) return null
-        val elapsedMs = (nowElapsedRealtimeMs - state.anchorElapsedRealtimeMs).coerceAtLeast(0L)
         val advances = state.playbackState == "PLAYING" && !state.locallyPaused
+        // Stream activity can remain PLAYING for seconds after the sender stops.
+        // Extrapolate only as far as the last fresh sender measurement supports.
+        val supportedNowMs =
+            if (advances) {
+                val reportedAgeMs = state.reportedSampleAgeMs?.toLong()
+                if (reportedAgeMs == null) {
+                    state.anchorElapsedRealtimeMs
+                } else {
+                    val remainingMs = (MAX_SAMPLE_AGE_MS - reportedAgeMs).coerceAtLeast(0L)
+                    val deadlineMs =
+                        if (state.sampleObservedElapsedRealtimeMs > Long.MAX_VALUE - remainingMs)
+                            Long.MAX_VALUE
+                        else state.sampleObservedElapsedRealtimeMs + remainingMs
+                    nowElapsedRealtimeMs.coerceAtMost(deadlineMs)
+                }
+            } else nowElapsedRealtimeMs
+        val elapsedMs = (supportedNowMs - state.anchorElapsedRealtimeMs).coerceAtLeast(0L)
         val basePosition = state.anchorPositionMs + if (advances) elapsedMs else 0L
         val correctionProgress =
             if (
@@ -307,7 +320,7 @@ object ReceiverTimelinePolicy {
             ) {
                 1.0
             } else {
-                ((nowElapsedRealtimeMs - state.correctionStartedAtMs).coerceAtLeast(0L).toDouble() /
+                ((supportedNowMs - state.correctionStartedAtMs).coerceAtLeast(0L).toDouble() /
                         state.correctionDurationMs.toDouble())
                     .coerceIn(0.0, 1.0)
             }

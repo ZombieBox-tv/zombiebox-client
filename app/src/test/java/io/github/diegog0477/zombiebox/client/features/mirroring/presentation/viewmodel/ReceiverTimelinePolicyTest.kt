@@ -82,7 +82,7 @@ class ReceiverTimelinePolicyTest {
         assertEquals(11_000, ReceiverTimelinePolicy.estimate(ahead, 2_000)?.positionMs)
         assertEquals(11_550, ReceiverTimelinePolicy.estimate(ahead, 2_500)?.positionMs)
         assertEquals(12_100, ReceiverTimelinePolicy.estimate(ahead, 3_000)?.positionMs)
-        assertEquals(18_700, ReceiverTimelinePolicy.estimateForDisplay(ahead, 9_000)?.positionMs)
+        assertEquals(16_500, ReceiverTimelinePolicy.estimateForDisplay(ahead, 9_000)?.positionMs)
     }
 
     @Test
@@ -253,7 +253,7 @@ class ReceiverTimelinePolicyTest {
     }
 
     @Test
-    fun staleSampleAndLongLocalPauseKeepAnUnclaimedContinuousEstimate() {
+    fun staleSampleAndLongLocalPauseKeepTheLastSupportedPosition() {
         val playing = observe(position = 10_000, now = 1_000)
         val locallyPaused = ReceiverTimelinePolicy.setLocallyPaused(playing, true, 1_500)
         assertEquals(10_500, ReceiverTimelinePolicy.estimate(locallyPaused, 1_500)?.positionMs)
@@ -278,9 +278,24 @@ class ReceiverTimelinePolicyTest {
             ReceiverTimelinePolicy.estimateForDisplay(resumed, 180_000)?.positionMs,
         )
         assertEquals(
-            11_500,
+            10_500,
             ReceiverTimelinePolicy.estimateForDisplay(resumed, 181_000)?.positionMs,
         )
+    }
+
+    @Test
+    fun stalePlayingReportCannotAdvancePastTheLastFreshSenderSample() {
+        val playing = observe(position = 10_000, age = 500, now = 1_000)
+        assertEquals(15_000, ReceiverTimelinePolicy.estimateForDisplay(playing, 6_000)?.positionMs)
+        assertEquals(15_000, ReceiverTimelinePolicy.estimateForDisplay(playing, 20_000)?.positionMs)
+        assertFalse(
+            ReceiverTimelinePolicy.estimateForDisplay(playing, 20_000)?.senderMeasurementFresh
+                ?: true
+        )
+
+        val freshAgain = observe(previous = playing, position = 17_000, now = 20_000)
+        assertEquals(17_000, ReceiverTimelinePolicy.estimate(freshAgain, 20_000)?.positionMs)
+        assertEquals(18_000, ReceiverTimelinePolicy.estimate(freshAgain, 21_000)?.positionMs)
     }
 
     @Test
