@@ -97,6 +97,54 @@ class PcmStreamPlayerTest {
     }
 
     @Test
+    fun replacementWaitsForOldAudioOutputRelease() {
+        val firstRead = CountDownLatch(1)
+        val firstClosed = CountDownLatch(1)
+        val releaseEntered = CountDownLatch(1)
+        val allowRelease = CountDownLatch(1)
+        val secondOpened = CountDownLatch(1)
+        val replacementReturned = CountDownLatch(1)
+        val outputs = AtomicInteger()
+        val player =
+            PcmStreamPlayer(
+                object : PcmStreamTransport {
+                    override fun open(url: String): PcmStreamResponse =
+                        if (url.endsWith("/first")) BlockingResponse(firstRead, firstClosed)
+                        else {
+                            secondOpened.countDown()
+                            PayloadResponse(ByteArray(0))
+                        }
+                }
+            ) {
+                val number = outputs.incrementAndGet()
+                FakeAudioOutput {
+                    if (number == 1) {
+                        releaseEntered.countDown()
+                        assertTrue(allowRelease.await(2, TimeUnit.SECONDS))
+                    }
+                }
+            }
+
+        try {
+            player.play("http://gateway.example/first", 0, true) { _, _, _ -> }
+            assertTrue(firstRead.await(2, TimeUnit.SECONDS))
+            Thread {
+                    player.play("http://gateway.example/second", 0, true) { _, _, _ -> }
+                    replacementReturned.countDown()
+                }
+                .start()
+            assertTrue(releaseEntered.await(2, TimeUnit.SECONDS))
+            assertFalse(secondOpened.await(100, TimeUnit.MILLISECONDS))
+            allowRelease.countDown()
+            assertTrue(replacementReturned.await(2, TimeUnit.SECONDS))
+            assertTrue(secondOpened.await(2, TimeUnit.SECONDS))
+        } finally {
+            allowRelease.countDown()
+            player.close()
+        }
+    }
+
+    @Test
     fun rejectsRedirectResponsesBeforeCreatingAnAudioTrack() {
         val failed = CountDownLatch(1)
         val outputCreated = AtomicBoolean(false)

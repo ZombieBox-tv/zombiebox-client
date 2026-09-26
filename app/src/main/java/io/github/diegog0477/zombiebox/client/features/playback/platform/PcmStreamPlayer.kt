@@ -129,6 +129,7 @@ internal class PcmStreamPlayer(
         val changed: (String, Int, Int) -> Unit,
     ) {
         val monitor = Object()
+        val cleanupMonitor = Object()
         @Volatile var cancelled = false
         @Volatile var terminal = false
         var paused = !autoplay
@@ -456,24 +457,28 @@ internal class PcmStreamPlayer(
     }
 
     private fun closeResources(job: Job) {
-        val response: PcmStreamResponse?
-        val output: PcmAudioOutput?
-        synchronized(job.monitor) {
-            response = job.response
-            output = job.output
-            job.response = null
-            job.output = null
-        }
-        try {
-            response?.close()
-        } catch (_: Exception) {}
-        if (output != null) {
+        // Cancellation and the worker's finally block can both arrive here.
+        // The worker must finish the previous release before it opens another output.
+        synchronized(job.cleanupMonitor) {
+            val response: PcmStreamResponse?
+            val output: PcmAudioOutput?
+            synchronized(job.monitor) {
+                response = job.response
+                output = job.output
+                job.response = null
+                job.output = null
+            }
             try {
-                output.stop()
+                response?.close()
             } catch (_: Exception) {}
-            try {
-                output.release()
-            } catch (_: Exception) {}
+            if (output != null) {
+                try {
+                    output.stop()
+                } catch (_: Exception) {}
+                try {
+                    output.release()
+                } catch (_: Exception) {}
+            }
         }
     }
 }
