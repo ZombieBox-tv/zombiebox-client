@@ -20,6 +20,7 @@ import android.widget.TextView
 import io.github.diegog0477.zombiebox.client.R
 import io.github.diegog0477.zombiebox.client.core.model.MediaItem
 import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
+import io.github.diegog0477.zombiebox.client.features.artwork.domain.repository.ArtworkRequestRole
 import io.github.diegog0477.zombiebox.client.features.artwork.platform.ArtworkDecoder
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.ArtworkImageView
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel.ArtworkViewModel
@@ -96,6 +97,7 @@ class NowPlayingRailView(
     private val artContainer: FrameLayout
     private val artView: ArtworkImageView
     private val artFallback: ServiceMarkView
+    private var audioArtworkMode = false
     private val titleText: TextView
     private val subtitleText: TextView
     private val timingText: TextView
@@ -127,7 +129,7 @@ class NowPlayingRailView(
         header.addView(providerTitle, LayoutParams(0, -2, 1f))
         addView(header)
 
-        // Artwork container (16:9 box with dark background)
+        // Artwork container: square for audio, wide for video.
         artContainer =
             FrameLayout(context).apply {
                 setBackgroundDrawable(ui.box(Color.rgb(16, 22, 24), ui.panel))
@@ -254,6 +256,7 @@ class NowPlayingRailView(
 
     fun update(session: HomePlaybackSession) {
         val item = session.item
+        val isAudio = item?.kind == "audio"
         val provider = item?.provider ?: ""
         accentColor = ui.providerAccent(provider)
         providerIcon.bind(provider, accentColor)
@@ -271,6 +274,16 @@ class NowPlayingRailView(
 
         updateProgress(session.state, session.positionMs, session.durationMs)
 
+        if (audioArtworkMode != isAudio) {
+            audioArtworkMode = isAudio
+            artContainer.layoutParams =
+                LayoutParams(if (isAudio) ui.dp(136) else -1, ui.dp(136)).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    topMargin = ui.dp(10)
+                    bottomMargin = ui.dp(8)
+                }
+        }
+
         prevButton.visibility = if (session.canPrevious) VISIBLE else GONE
         nextButton.visibility = if (session.canNext) VISIBLE else GONE
 
@@ -282,7 +295,11 @@ class NowPlayingRailView(
         if (!item?.imageUrl.isNullOrEmpty()) {
             artView.visibility = VISIBLE
             artFallback.visibility = GONE
-            artView.bind(artwork, item?.imageUrl ?: "")
+            artView.bind(
+                artwork,
+                item?.imageUrl ?: "",
+                if (isAudio) ArtworkRequestRole.AUDIO else ArtworkRequestRole.DEFAULT,
+            )
         } else {
             artView.visibility = GONE
             artFallback.visibility = VISIBLE
