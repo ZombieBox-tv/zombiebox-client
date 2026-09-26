@@ -1,5 +1,16 @@
 # zombiebox-client: component work
 
+## Unreleased signed dev.70 QA candidate
+
+Quality inventory network and parsing failures now reach the player error
+handler instead of creating a false Auto-only menu. The signed dev.70 APK
+updated the selected Vizio API 13 in place over dev.69, preserving the installed
+application identity and data. The release build, lint and JVM tests passed;
+the package, versionCode 70, minSdk 9, single DEX 035, absent native libraries,
+and matching v1/v2 signing certificate were checked before installation.
+Gateway dev.113's quality refresh and 1080p playback still need conclusive
+physical verification. AirPlay iPad and Spotify phone trials remain pending.
+
 ## Unreleased dev.67 QA candidate
 
 Dev.67 gives the bounded YouTube title-search suggestions their own localized
