@@ -111,6 +111,26 @@ class ReceiverTimelinePolicyTest {
     }
 
     @Test
+    fun trackChangeDoesNotCarryAnUnconfirmedPausedPosition() {
+        val playing = observe(position = 10_000, now = 1_000)
+        val unconfirmedPause =
+            observe(previous = playing, position = 25_000, status = "PAUSED", now = 2_000)
+        assertEquals(25_000L, unconfirmedPause.pendingPausedPositionMs)
+
+        val nextTrack =
+            observe(
+                previous = unconfirmedPause,
+                item = "track-2",
+                position = 750,
+                status = "PAUSED",
+                now = 3_000,
+            )
+
+        assertEquals(750, ReceiverTimelinePolicy.estimate(nextTrack, 3_000)?.positionMs)
+        assertNull(nextTrack.pendingPausedPositionMs)
+    }
+
+    @Test
     fun pausedTimelineDoesNotAdvanceAndResumeContinuesItsPosition() {
         val paused = observe(position = 10_000, status = "PAUSED", now = 1_000)
         assertEquals(10_000, ReceiverTimelinePolicy.estimate(paused, 6_000)?.positionMs)
@@ -128,6 +148,50 @@ class ReceiverTimelinePolicyTest {
 
         assertEquals(10_500, ReceiverTimelinePolicy.estimate(updated, 2_000)?.positionMs)
         assertEquals(10_500, ReceiverTimelinePolicy.estimateForDisplay(updated, 60_000)?.positionMs)
+    }
+
+    @Test
+    fun repeatedConflictingPausedSamplesHoldPriorEstimateUntilSenderSeeks() {
+        val playing = observe(position = 10_000, now = 1_000)
+        val firstPause =
+            observe(previous = playing, position = 24_000, status = "PAUSED", now = 2_000)
+
+        assertEquals(
+            11_000,
+            ReceiverTimelinePolicy.estimateForDisplay(firstPause, 2_000)?.positionMs,
+        )
+        assertNull(ReceiverTimelinePolicy.estimate(firstPause, 2_000))
+        assertEquals(24_000, firstPause.reportedPositionMs)
+        assertEquals(24_000L, firstPause.pendingPausedPositionMs)
+        assertEquals(
+            11_000,
+            ReceiverTimelinePolicy.estimateForDisplay(firstPause, 60_000)?.positionMs,
+        )
+
+        val staleAgain =
+            observe(previous = firstPause, position = 24_500, status = "PAUSED", now = 3_000)
+
+        assertEquals(
+            11_000,
+            ReceiverTimelinePolicy.estimateForDisplay(staleAgain, 3_000)?.positionMs,
+        )
+        assertNull(ReceiverTimelinePolicy.estimate(staleAgain, 3_000))
+        assertEquals(24_500L, staleAgain.pendingPausedPositionMs)
+
+        val stableSeek =
+            observe(previous = staleAgain, position = 28_000, status = "PAUSED", now = 4_000)
+
+        assertEquals(28_000, ReceiverTimelinePolicy.estimate(stableSeek, 4_000)?.positionMs)
+        assertNull(stableSeek.pendingPausedPositionMs)
+    }
+
+    @Test
+    fun closePlayToPauseSampleRemainsSourceAuthoritativeImmediately() {
+        val playing = observe(position = 10_000, now = 1_000)
+        val paused = observe(previous = playing, position = 11_500, status = "PAUSED", now = 2_000)
+
+        assertEquals(11_500, ReceiverTimelinePolicy.estimate(paused, 2_000)?.positionMs)
+        assertNull(paused.pendingPausedPositionMs)
     }
 
     @Test

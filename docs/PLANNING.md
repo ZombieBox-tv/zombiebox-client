@@ -1,5 +1,18 @@
 # zombiebox-client: component work
 
+## Unreleased dev.72 AirPlay pause timeline candidate
+
+An inconsistent first sender position on a PLAYING to PAUSED transition now
+holds the prior local estimate. Repeated identical paused samples do not
+confirm a stale position; a material paused seek or a sender position that
+returns near the estimate is accepted. Track and receiver-session changes
+still reset the anchor. Focused and full JVM tests, release build and lint passed
+on the host. The APK kept the existing package and signing certificate, has
+versionCode 72, minSdk 9, one DEX 035 and no native libraries, and was
+installed over dev.71 on the selected Vizio/API13 without clearing data.
+MainActivity launched. Physical iPad/Vizio pause, seek and resume behavior is
+pending.
+
 ## Unreleased signed dev.71 artwork candidate
 
 Ordinary Home rerenders now retain pending artwork requests instead of
