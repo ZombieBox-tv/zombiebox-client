@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.LinearLayout
+import android.widget.TextView
 import io.github.diegog0477.zombiebox.client.R
 import io.github.diegog0477.zombiebox.client.core.model.MediaItem
 import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
@@ -16,6 +17,10 @@ class AirPlayPageView(
     private val ui: TvWidgets,
     private val actions: HomeActions,
 ) {
+    private var snapshotAudioItem: MediaItem? = null
+    private var audioStatus: TextView? = null
+    private var audioDescription: TextView? = null
+
     fun render(
         parent: LinearLayout,
         snapshot: HomeSnapshot,
@@ -25,6 +30,9 @@ class AirPlayPageView(
         val sessions = snapshot.sections.flatMap { it.items }.filter { it.provider == "airplay" }
         val audio = sessions.firstOrNull { it.id == "airplay-audio" }
         val mirror = sessions.firstOrNull { it.id == "airplay-live" }
+        snapshotAudioItem = audio
+        audioStatus = null
+        audioDescription = null
 
         val hero =
             ui.column().apply {
@@ -117,6 +125,29 @@ class AirPlayPageView(
         )
     }
 
+    /** Updates the already-rendered audio card without rebuilding its controls or focus rows. */
+    fun updatePlaybackSession(
+        playback: HomePlaybackSession,
+        suppressSnapshotActivity: Boolean = false,
+    ) {
+        val activeAudio = playback.item?.takeIf { playback.active && it.provider == "airplay" }
+        val item = activeAudio ?: snapshotAudioItem.takeUnless { suppressSnapshotActivity }
+        val isActive = activeAudio != null || (!suppressSnapshotActivity && item?.playable == true)
+
+        audioStatus?.apply {
+            setText(
+                when {
+                    !isActive -> R.string.airplay_waiting
+                    activeAudio?.let { playback.state.equals("PAUSED", ignoreCase = true) } ==
+                        true -> R.string.paused
+                    else -> R.string.playing
+                }
+            )
+            setTextColor(if (isActive) ui.green else ui.muted)
+        }
+        audioDescription?.text = audioDetail(item, isActive)
+    }
+
     private fun sessionCard(
         parent: LinearLayout,
         focusRows: ArrayList<Pair<String, ViewGroup>>,
@@ -137,7 +168,7 @@ class AirPlayPageView(
             ui.text(context.getString(title), 20f).apply { typeface = ui.bold },
             LinearLayout.LayoutParams(0, -2, 1f),
         )
-        heading.addView(
+        val status =
             ui.text(
                 context.getString(
                     if (item?.playable == true) R.string.playing else R.string.airplay_waiting
@@ -145,16 +176,15 @@ class AirPlayPageView(
                 13f,
                 if (item?.playable == true) ui.green else ui.muted,
             )
-        )
+        if (key == "audio") audioStatus = status
+        heading.addView(status)
         card.addView(heading)
         val description =
-            when {
-                item?.playable != true -> context.getString(idleDetail)
-                key == "mirror" || item.title == "AirPlay audio" -> context.getString(activeDetail)
-                else ->
-                    listOf(item.title, item.subtitle).filter { it.isNotBlank() }.joinToString(" · ")
+            ui.text(cardDescription(key, item, idleDetail, activeDetail), 15f, ui.muted).apply {
+                maxLines = 2
             }
-        card.addView(ui.text(description, 15f, ui.muted).apply { maxLines = 2 })
+        if (key == "audio") audioDescription = description
+        card.addView(description)
         if (item?.playable == true) {
             val controls = ui.row()
             controls.addView(
@@ -165,6 +195,27 @@ class AirPlayPageView(
         }
         parent.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(10) })
     }
+
+    private fun audioDetail(item: MediaItem?, active: Boolean): CharSequence =
+        when {
+            !active -> context.getString(R.string.airplay_audio_idle)
+            item == null || item.title.isBlank() || item.title.equals("AirPlay audio", true) ->
+                context.getString(R.string.airplay_audio_active)
+            else -> listOf(item.title, item.subtitle).filter { it.isNotBlank() }.joinToString(" · ")
+        }
+
+    private fun cardDescription(
+        key: String,
+        item: MediaItem?,
+        idleDetail: Int,
+        activeDetail: Int,
+    ): String =
+        when {
+            item?.playable != true -> context.getString(idleDetail)
+            key == "audio" -> audioDetail(item, active = true).toString()
+            key == "mirror" || item.title == "AirPlay audio" -> context.getString(activeDetail)
+            else -> listOf(item.title, item.subtitle).filter { it.isNotBlank() }.joinToString(" · ")
+        }
 
     private fun statusLabel(state: String?): String =
         context.getString(

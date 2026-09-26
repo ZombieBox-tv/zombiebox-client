@@ -72,6 +72,7 @@ class HomeView(
 
     private val focusRows = ArrayList<Pair<String, ViewGroup>>()
     private var scope = HomeScope()
+    private var airPlayPlaybackStopped = false
     private val navigation = LinkedHashMap<String, Button>()
     private var heroStatus: TextView? = null
     private var playbackFeedbackView: TextView? = null
@@ -84,6 +85,7 @@ class HomeView(
     private var compactTransport: CompactTransportBar? = null
     private var rightRailContainer: FrameLayout? = null
     private var spotifyPageView: SpotifyPageView? = null
+    private var airPlayPageView: AirPlayPageView? = null
     private var youtubePageView: YouTubePageView? = null
     private var rememberedMainFocus: String? = null
     private var currentPlayback: HomePlaybackSession = HomePlaybackSession()
@@ -135,8 +137,16 @@ class HomeView(
     fun setPlaybackSession(playback: HomePlaybackSession) {
         val wasActive = currentPlayback.active
         val wasSpotify = currentPlayback.item?.provider == "spotify"
+        val wasAirPlay = wasActive && currentPlayback.item?.provider == "airplay"
         currentPlayback = playback
+        val isAirPlay = playback.active && playback.item?.provider == "airplay"
+        if (isAirPlay) {
+            airPlayPlaybackStopped = false
+        } else if (wasAirPlay || (playback.item?.provider == "airplay" && !playback.active)) {
+            airPlayPlaybackStopped = true
+        }
         spotifyPageView?.updatePlaybackSession(playback)
+        airPlayPageView?.updatePlaybackSession(playback, suppressAirPlaySnapshot(playback))
         if (isDockedLandscape) {
             rightRailContainer?.let { container ->
                 if (playback.active && nowPlayingRail != null) {
@@ -203,7 +213,20 @@ class HomeView(
         nowPlayingRail?.updateProgress(status, positionMs, durationMs)
         compactTransport?.updateProgress(status, positionMs, durationMs)
         spotifyPageView?.updateProgress(status, positionMs, durationMs)
+        airPlayPageView?.updatePlaybackSession(
+            currentPlayback,
+            suppressAirPlaySnapshot(currentPlayback),
+        )
     }
+
+    private fun suppressAirPlaySnapshot(playback: HomePlaybackSession): Boolean =
+        airPlayPlaybackStopped || (playback.active && playback.item?.provider != "airplay")
+
+    private fun airPlaySnapshotAudio(snapshot: HomeSnapshot): MediaItem? =
+        snapshot.sections
+            .asSequence()
+            .flatMap { it.items.asSequence() }
+            .firstOrNull { it.provider == "airplay" && it.id == "airplay-audio" }
 
     fun status(loading: Boolean, failed: Boolean) {
         heroStatus?.apply {
@@ -262,8 +285,16 @@ class HomeView(
         full: Boolean = false,
         playback: HomePlaybackSession = currentPlayback,
     ) {
+        val wasActiveAirPlay = currentPlayback.active && currentPlayback.item?.provider == "airplay"
         this.scope = scope
         this.currentPlayback = playback
+        val isActiveAirPlay = playback.active && playback.item?.provider == "airplay"
+        if (isActiveAirPlay) {
+            airPlayPlaybackStopped = false
+        } else if (wasActiveAirPlay || (playback.item?.provider == "airplay" && !playback.active)) {
+            airPlayPlaybackStopped = true
+        }
+        if (airPlaySnapshotAudio(snapshot)?.playable == false) airPlayPlaybackStopped = false
         this.isFullscreen = full
         focusRows.clear()
         navigation.clear()
@@ -271,6 +302,7 @@ class HomeView(
         compactTransport = null
         rightRailContainer = null
         spotifyPageView = null
+        airPlayPageView = null
         youtubePageView = null
         removeAllViews()
 
@@ -436,7 +468,13 @@ class HomeView(
                     )
             }
             "airplay" -> {
-                AirPlayPageView(context, ui, actions).render(mainColumn, snapshot, focusRows)
+                val page = AirPlayPageView(context, ui, actions)
+                airPlayPageView = page
+                page.render(mainColumn, snapshot, focusRows)
+                page.updatePlaybackSession(
+                    currentPlayback,
+                    suppressAirPlaySnapshot(currentPlayback),
+                )
             }
             "spotify" -> {
                 val page = SpotifyPageView(context, ui, actions, artwork, decoder)
