@@ -45,6 +45,11 @@ class GatewayReceiverRepository(private val api: GatewayApi) : ReceiverRepositor
         api.request("POST", "/v1/player/spotify", JSONObject().put("action", action))
     }
 
+    override fun airplayCommand(action: String) {
+        require(action == "next" || action == "previous" || action == "playpause")
+        api.request("POST", "/v1/player/airplay", JSONObject().put("action", action))
+    }
+
     override fun active(): ReceiverPlan? {
         val reception = api.request("GET", "/v1/cast/active")
         val cast = reception.optJSONObject("plan")
@@ -52,37 +57,48 @@ class GatewayReceiverRepository(private val api: GatewayApi) : ReceiverRepositor
             try {
                 api.request("GET", "/v1/media-receiver")
             } catch (error: GatewayFailure) {
-                if (cast != null) return decode(cast, "PLAYING")
+                if (cast != null) return decode(cast, null)
                 if (error.status == 404) return null
                 throw error
             } catch (error: Exception) {
-                if (cast != null) return decode(cast, "PLAYING")
+                if (cast != null) return decode(cast, null)
                 throw error
             }
         val plan = receiver.optJSONObject("plan")
         if (plan == null) {
-            if (cast != null) return decode(cast, "PLAYING")
+            if (cast != null) return decode(cast, null)
             if (reception.optBoolean("preparing"))
                 throw IllegalStateException("Receiver is preparing the next queued item")
             return null
         }
-        return decode(plan, receiver.optJSONObject("nowPlaying")?.optString("state") ?: "PLAYING")
+        return decode(plan, receiver.optJSONObject("nowPlaying"))
     }
 
-    private fun decode(plan: JSONObject, state: String): ReceiverPlan {
+    private fun decode(plan: JSONObject, nowPlaying: JSONObject?): ReceiverPlan {
         val path = plan.getString("url")
         require(path.startsWith("/v1/streams/") && !path.contains("\\") && !path.contains("#"))
         val item = plan.optJSONObject("item")
+        val positionKnown =
+            item?.optString("provider") == "airplay" &&
+                item.optString("kind") == "audio" &&
+                nowPlaying?.optBoolean("positionKnown") == true &&
+                nowPlaying.optLong("positionMs", -1L) in 0..Int.MAX_VALUE.toLong() &&
+                nowPlaying.optLong("durationMs", -1L) in 1..Int.MAX_VALUE.toLong() &&
+                nowPlaying.optLong("positionAgeMs", 0L) in 0..5000
         return ReceiverPlan(
             plan.getString("sessionId"),
             path,
             plan.getString("mimeType"),
             item?.let { MediaItemDecoder.decodeItem(it) },
             item?.optString("kind") != "audio",
-            state,
+            nowPlaying?.optString("state") ?: "PLAYING",
             plan.optBoolean("live", true),
             plan.optBoolean("seekable", false),
             plan.optString("mode", "DIRECT_PLAY"),
+            positionKnown,
+            if (positionKnown) nowPlaying!!.optInt("positionMs") else 0,
+            if (positionKnown) nowPlaying!!.optInt("durationMs") else 0,
+            if (positionKnown) nowPlaying!!.optInt("positionAgeMs") else 0,
         )
     }
 

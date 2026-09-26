@@ -83,12 +83,16 @@ class MediaProbePlayback : ProbePlayback {
                             }
                             if (
                                 !operationStarted &&
-                                    current >= (if (asset.kind == "seek") 800 else 300) &&
+                                    current >=
+                                        (if (asset.kind == "seek" || asset.kind == "seek-midstream")
+                                            800
+                                        else 300) &&
                                     !operationComplete
                             ) {
                                 operationStarted = true
                                 when (asset.kind) {
                                     "seek" -> media.seekTo(0)
+                                    "seek-midstream" -> media.seekTo(1500)
                                     "pause-resume" -> {
                                         media.pause()
                                         val pausedAt = media.currentPosition
@@ -198,13 +202,19 @@ class MediaProbePlayback : ProbePlayback {
                 }
                 media.setOnSeekCompleteListener {
                     if (
-                        !finished && run == generation && asset.kind == "seek" && operationStarted
+                        !finished &&
+                            run == generation &&
+                            (asset.kind == "seek" || asset.kind == "seek-midstream") &&
+                            operationStarted
                     ) {
                         try {
                             val current = media.currentPosition
                             // Completion alone is insufficient: validate the target and
                             // advancement.
-                            if (current in 0..350) {
+                            val targetReached =
+                                if (asset.kind == "seek-midstream") current in 1200..1900
+                                else current in 0..350
+                            if (targetReached) {
                                 operationPosition = current
                                 operationComplete = true
                             } else finish("FAIL", detail = "seek_pos:$current")

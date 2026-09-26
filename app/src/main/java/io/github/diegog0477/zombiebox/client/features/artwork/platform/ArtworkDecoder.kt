@@ -2,6 +2,7 @@ package io.github.diegog0477.zombiebox.client.features.artwork.platform
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import io.github.diegog0477.zombiebox.client.features.artwork.domain.repository.ArtworkRequestRole
 import java.security.MessageDigest
 import java.util.LinkedHashMap
 import java.util.concurrent.RejectedExecutionException
@@ -12,7 +13,7 @@ class ArtworkDecoder(
     private val execute: (() -> Unit) -> Unit,
     private val deliver: (() -> Unit) -> Unit,
 ) {
-    private data class Entry(val bitmap: Bitmap, val expires: Long, val hero: Boolean) {
+    private data class Entry(val bitmap: Bitmap, val expires: Long, val role: ArtworkRequestRole) {
         val bytes: Long
             get() = bitmap.rowBytes.toLong() * bitmap.height
     }
@@ -36,15 +37,15 @@ class ArtworkDecoder(
         clear()
     }
 
-    fun decode(encoded: ByteArray, hero: Boolean, done: (Bitmap?) -> Unit) {
+    fun decode(encoded: ByteArray, role: ArtworkRequestRole, done: (Bitmap?) -> Unit) {
         val ticket = synchronized(this) { if (closed) return else generation }
         try {
             execute {
-                val target = if (hero) budget.heroWidth else budget.cardWidth
+                val target = budget.targetEdge(role)
                 val key =
                     target.toString() +
                         ":" +
-                        hero +
+                        role +
                         ":" +
                         MessageDigest.getInstance("SHA-256").digest(encoded).joinToString("") {
                             "%02x".format(it.toInt() and 255)
@@ -60,7 +61,7 @@ class ArtworkDecoder(
                             null
                         }
                     }
-                val bitmap = cached ?: decodeBytes(encoded, target)
+                val bitmap = cached ?: decodeBytes(encoded, role, target)
                 synchronized(this) {
                     if (closed || ticket != generation) return@execute
                     if (bitmap != null && cached == null) {
@@ -68,14 +69,15 @@ class ArtworkDecoder(
                         while (entries.hasNext()) {
                             val entry = entries.next().value
                             if (
-                                (hero && entry.hero) || entry.expires <= System.currentTimeMillis()
+                                (role != ArtworkRequestRole.DEFAULT && entry.role == role) ||
+                                    entry.expires <= System.currentTimeMillis()
                             ) {
                                 bytes -= entry.bytes
                                 entries.remove()
                             }
                         }
                         cache.remove(key)?.let { bytes -= it.bytes }
-                        val entry = Entry(bitmap, System.currentTimeMillis() + 300000, hero)
+                        val entry = Entry(bitmap, System.currentTimeMillis() + 300000, role)
                         cache[key] = entry
                         bytes += entry.bytes
                         val oldest = cache.entries.iterator()
@@ -95,19 +97,28 @@ class ArtworkDecoder(
         }
     }
 
-    private fun decodeBytes(encoded: ByteArray, target: Int): Bitmap? {
+    private fun decodeBytes(encoded: ByteArray, role: ArtworkRequestRole, target: Int): Bitmap? {
         if (encoded.size > 256 * 1024) return null
         return try {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(encoded, 0, encoded.size, bounds)
-            if (bounds.outWidth !in 1..960 || bounds.outHeight !in 1..540) return null
+            val maximumHeight = if (role == ArtworkRequestRole.AUDIO) 960 else 540
+            if (bounds.outWidth !in 1..960 || bounds.outHeight !in 1..maximumHeight) return null
             val options =
                 BitmapFactory.Options().apply {
                     inPreferredConfig = Bitmap.Config.RGB_565
-                    inSampleSize = 1
-                    while (bounds.outWidth / inSampleSize > target) inSampleSize *= 2
+                    inSampleSize =
+                        artworkSampleSize(bounds.outWidth, bounds.outHeight, target, role)
                 }
-            BitmapFactory.decodeByteArray(encoded, 0, encoded.size, options)
+            val bitmap = BitmapFactory.decodeByteArray(encoded, 0, encoded.size, options)
+            if (
+                bitmap != null &&
+                    !budget.decodedBytesWithinBudget(bitmap.rowBytes.toLong() * bitmap.height)
+            ) {
+                bitmap.recycle()
+                return null
+            }
+            bitmap
         } catch (_: OutOfMemoryError) {
             synchronized(this) {
                 cache.clear()

@@ -57,6 +57,11 @@
     <string name="expand">Expand</string>
     <string name="more_info">More info</string>
     <string name="quality">Quality</string>
+    <string name="airplay_quality_title">AirPlay audio path</string>
+    <string name="airplay_quality_summary">
+        Apple source: not measured\nBridge: AAC (128 kb/s target)\nTV output: PCM 44.1 kHz, 16-bit
+        stereo\nNo alternate bitrate is available for this session.
+    </string>
     <string name="quality_auto">Auto</string>
     <string name="quality_manual_unavailable">
         Manual quality is unavailable for this video on this device. Run media probes in Diagnostics
@@ -621,4 +626,12 @@
     <string name="devices_mirror_detail">
         Receive a screen-sharing session from a mobile device or computer.
     </string>
+    <string name="youtube_home_feed">Home feed from YouTube</string>
+    <string name="youtube_activity_feed">Your ZombieBox YouTube watch activity</string>
+    <string name="youtube_more_videos">More videos</string>
+    <string name="youtube_quality_restarts_from_beginning">
+        This device restarts the video at 0:00 when switching to this quality.
+    </string>
+    <string name="youtube_loading_more">Loading videos…</string>
+    <string name="youtube_retry_feed">Retry loading videos</string>
 </resources>

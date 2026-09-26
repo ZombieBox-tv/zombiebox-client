@@ -27,6 +27,7 @@ import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.Ar
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel.ArtworkViewModel
 import io.github.diegog0477.zombiebox.client.features.browser.presentation.ui.BrowserActivity
 import io.github.diegog0477.zombiebox.client.features.catalog.data.GatewayCatalogRepository
+import io.github.diegog0477.zombiebox.client.features.catalog.domain.model.CatalogPage
 import io.github.diegog0477.zombiebox.client.features.catalog.platform.CatalogSavedState
 import io.github.diegog0477.zombiebox.client.features.catalog.presentation.ui.CatalogDialogs
 import io.github.diegog0477.zombiebox.client.features.catalog.presentation.viewmodel.CatalogViewModel
@@ -40,6 +41,7 @@ import io.github.diegog0477.zombiebox.client.features.diagnostics.presentation.v
 import io.github.diegog0477.zombiebox.client.features.discovery.presentation.viewmodel.DiscoveryViewModel
 import io.github.diegog0477.zombiebox.client.features.home.data.GatewayHomeRepository
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeScope
+import io.github.diegog0477.zombiebox.client.features.home.domain.model.YouTubeActivityPage
 import io.github.diegog0477.zombiebox.client.features.home.presentation.ui.HomeActions
 import io.github.diegog0477.zombiebox.client.features.home.presentation.ui.HomePlaybackSession
 import io.github.diegog0477.zombiebox.client.features.home.presentation.ui.HomeView
@@ -50,6 +52,9 @@ import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.Rec
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.ReceiverPlan
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.repository.ReceiverClaimConflict
 import io.github.diegog0477.zombiebox.client.features.mirroring.presentation.ui.MediaReceiverDialog
+import io.github.diegog0477.zombiebox.client.features.mirroring.presentation.viewmodel.ReceiverPlaybackPolicy
+import io.github.diegog0477.zombiebox.client.features.mirroring.presentation.viewmodel.ReceiverPollingPolicy
+import io.github.diegog0477.zombiebox.client.features.mirroring.presentation.viewmodel.ReceiverTimelinePolicy
 import io.github.diegog0477.zombiebox.client.features.mirroring.presentation.viewmodel.ReceiverViewModel
 import io.github.diegog0477.zombiebox.client.features.playback.data.GatewayPlaybackRepository
 import io.github.diegog0477.zombiebox.client.features.playback.data.GatewayQualityRepository
@@ -63,6 +68,7 @@ import io.github.diegog0477.zombiebox.client.features.playback.platform.AudioFoc
 import io.github.diegog0477.zombiebox.client.features.playback.platform.PlaybackConnection
 import io.github.diegog0477.zombiebox.client.features.playback.platform.PlaybackNotifications
 import io.github.diegog0477.zombiebox.client.features.playback.platform.SurfaceEvidence
+import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.AudioTrackControlPolicy
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.PlaybackFailureDialog
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.QualityDialog
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.ui.SurfaceOutputView
@@ -89,6 +95,7 @@ import io.github.diegog0477.zombiebox.shared.GatewayDiscovery
 import io.github.diegog0477.zombiebox.shared.GatewayFailure
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 /** Native semantic Home. The gateway supplies content; all layout stays on-device. */
 @Suppress("DEPRECATION")
@@ -104,8 +111,9 @@ class MainActivity : Activity() {
             state = lastState,
             positionMs = lastPosition,
             durationMs = lastDuration,
-            canNext = ::nextButton.isInitialized && nextButton.isEnabled,
-            canPrevious = currentItem?.provider == "spotify",
+            canNext =
+                hasReceiverTrackControls() || (::nextButton.isInitialized && nextButton.isEnabled),
+            canPrevious = hasReceiverTrackControls(),
         )
 
     private fun render() {
@@ -144,9 +152,9 @@ class MainActivity : Activity() {
                 },
             )
     }
-    private val catalogModel by lazy {
-        CatalogViewModel(GatewayCatalogRepository(api), screenTasks())
-    }
+    private val catalogModel by lazy { CatalogViewModel(catalogRepository, screenTasks()) }
+    private val catalogRepository by lazy { GatewayCatalogRepository(api) }
+    private val homeRepository by lazy { GatewayHomeRepository(api) }
     private val tracksModel by lazy {
         TracksViewModel(
             GatewayTracksRepository(api),
@@ -295,6 +303,8 @@ class MainActivity : Activity() {
     private fun details(item: MediaItem) = catalogDialogs.details(item)
 
     private val worker = Executors.newSingleThreadExecutor()
+    private var youtubeBrowseGeneration = 0
+    private var youtubeBrowseTask: Future<*>? = null
     private var youtubeIncoming = false
     private var diagnosticsModel: DiagnosticsViewModel? = null
     private var youtubeDialog: YouTubeReceiverPanel? = null
@@ -308,7 +318,15 @@ class MainActivity : Activity() {
                 if (!closed) {
                     if (foreground && api.token.isNotEmpty() && ::receiverViewModel.isInitialized)
                         receiverViewModel.refresh()
-                    handler.postDelayed(this, 3000)
+                    val activeIncomingAirPlayAudio =
+                        session.isNotEmpty() &&
+                            session == incomingReceiverSession &&
+                            currentItem?.provider == "airplay" &&
+                            currentItem?.kind == "audio"
+                    handler.postDelayed(
+                        this,
+                        ReceiverPollingPolicy.intervalMs(activeIncomingAirPlayAudio),
+                    )
                 }
             }
         }
@@ -371,6 +389,7 @@ class MainActivity : Activity() {
     private var playbackPending = false
     private var playbackFeedbackGeneration = 0
     private var playbackLive = false
+    private var incomingReceiverSession = ""
     private var receiverState = ""
     private lateinit var receiverInfo: TextView
     private lateinit var receiverArtwork: ArtworkImageView
@@ -386,6 +405,16 @@ class MainActivity : Activity() {
     private var lastState = ""
     private var lastPosition = 0
     private var lastDuration = 0
+    private var localAudioPositionMs = 0
+    private var localAudioDurationMs = 0
+    private var localReceiverSession = ""
+    private var localReceiverItemKey = ""
+    private var receiverTimeline = ReceiverTimelinePolicy.State()
+    private var localOutputPaused = false
+    private var localPausePositionMs = 0
+    private var localPauseDurationMs = 0
+    private var pendingAirplayToggleSession = ""
+    private var pendingAirplayToggleTarget = ""
     @Volatile private var closed = false
     @Volatile private var foreground = false
     private val green
@@ -438,18 +467,14 @@ class MainActivity : Activity() {
                     providers = { providerList() },
                     pair = { pairing() },
                     playPause = { togglePlayback() },
-                    next = { if (session.isNotEmpty()) player.next() },
-                    previous = {
-                        if (
-                            currentItem?.provider == "spotify" &&
-                                receiverViewModel.activeSession == session
-                        ) {
-                            receiverViewModel.command("previous", ::error)
-                        }
-                    },
+                    next = { if (session.isNotEmpty()) nextTrack() },
+                    previous = { previousTrack() },
                     expand = { if (session.isNotEmpty()) togglePlayerSize() },
                     spotifyAuthorize = { spotifyAuthorize() },
                     spotifyReceive = { armMediaReceiver("spotify") },
+                    loadYouTubePage = ::loadYouTubePage,
+                    loadYouTubeActivityPage = ::loadYouTubeActivityPage,
+                    refreshHomeFocus = { restore -> content.rebuildFocus(restore) },
                 ),
             )
         content.setPadding(ui.dp(22), ui.dp(16), ui.dp(22), ui.dp(18))
@@ -466,46 +491,51 @@ class MainActivity : Activity() {
                 if (playbackPending) return@PlaybackConnection
                 if (::receiverViewModel.isInitialized && receiverViewModel.activeSession == session)
                     receiverViewModel.playbackState(status)
-                lastPosition = position + timelineOffset
-                lastDuration = if (duration > 0) duration + timelineOffset else 0
-                subtitleText.text =
-                    if (status == "PLAYING" || status == "PAUSED") tracksModel.textAt(lastPosition)
-                    else ""
-                subtitleText.visibility =
-                    if (subtitleText.text.isEmpty()) View.GONE else View.VISIBLE
-                playerStatus.text =
-                    getString(
-                        R.string.player_status,
-                        ui.localizedState(status),
-                        ui.formatTime(lastPosition),
-                        ui.formatTime(lastDuration),
+                val reportedPosition = (position + timelineOffset).coerceAtLeast(0)
+                val nowElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime()
+                localAudioPositionMs = reportedPosition.coerceAtLeast(0)
+                localAudioDurationMs = if (duration > 0) duration + timelineOffset else 0
+                val incomingAudio = isIncomingAudioSession()
+                if (incomingAudio && status == "PAUSED" && !localOutputPaused) {
+                    receiverTimeline =
+                        ReceiverTimelinePolicy.setLocallyPaused(
+                            receiverTimeline,
+                            true,
+                            nowElapsedRealtimeMs,
+                        )
+                    localOutputPaused = true
+                    val pausedSource = senderTimelinePosition(nowElapsedRealtimeMs)
+                    localPausePositionMs = pausedSource?.positionMs ?: localAudioPositionMs
+                    localPauseDurationMs = pausedSource?.durationMs ?: localAudioDurationMs
+                } else if (incomingAudio && status == "PLAYING" && localOutputPaused) {
+                    receiverTimeline =
+                        ReceiverTimelinePolicy.setLocallyPaused(
+                            receiverTimeline,
+                            false,
+                            nowElapsedRealtimeMs,
+                        )
+                    localOutputPaused = false
+                }
+                val measured = senderTimelinePosition(nowElapsedRealtimeMs)
+                val displayedStatus =
+                    ReceiverTimelinePolicy.displayState(
+                        if (incomingAudio && receiverState.isNotEmpty()) receiverState else status,
+                        incomingAudio && localOutputPaused,
                     )
-                if (::playerChrome.isInitialized) {
-                    if (playerChrome.updateProgress(status, lastPosition, lastDuration)) {
-                        playerFocus.rebuild(playerChrome.focusRows(), false)
+                val displayedPosition =
+                    if (incomingAudio && localOutputPaused) {
+                        localPausePositionMs
+                    } else {
+                        measured?.positionMs
+                            ?: if (incomingAudio) localAudioPositionMs else reportedPosition
                     }
-                }
-                content.updatePlaybackProgress(status, lastPosition, lastDuration)
-                if (
-                    session.isNotEmpty() &&
-                        (!::receiverViewModel.isInitialized ||
-                            receiverViewModel.activeSession.isEmpty())
-                )
-                    now.text = itemTitle
-                if (status == "PLAYING")
-                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                if (
-                    status == "FAILED" &&
-                        lastState != "FAILED" &&
-                        foreground &&
-                        receiverViewModel.activeSession.isEmpty() &&
-                        session.isNotEmpty() &&
-                        !youtubeIncoming
-                ) {
-                    showPlaybackFailure()
-                }
-                lastState = status
+                val displayedDuration =
+                    if (incomingAudio && localOutputPaused) {
+                        localPauseDurationMs
+                    } else {
+                        measured?.durationMs ?: localAudioDurationMs
+                    }
+                renderPlaybackProgress(displayedStatus, displayedPosition, displayedDuration)
             }
         audioController = player
         player.configure(api.base, api.device, api.token)
@@ -517,7 +547,7 @@ class MainActivity : Activity() {
         val uiHandler = handler
         homeViewModel =
             HomeViewModel(
-                GatewayHomeRepository(api),
+                homeRepository,
                 { work -> backgroundExecutor.execute { work() } },
                 { done -> uiHandler.post { done() } },
             )
@@ -570,11 +600,89 @@ class MainActivity : Activity() {
         provider: String = homeViewModel.state.scope.provider,
         query: String = homeViewModel.state.scope.query,
     ) {
+        invalidateYouTubeBrowse()
         if (provider == "rebrowser") {
             startActivity(Intent(this, BrowserActivity::class.java))
             return
         }
         if (api.token.isNotEmpty()) homeViewModel.refresh(HomeScope(provider, query))
+    }
+
+    private fun loadYouTubePage(offset: Int, done: (CatalogPage?, Exception?) -> Unit) {
+        val scope = homeViewModel.state.scope
+        if (
+            closed || scope.provider != "youtube" || scope.query.isNotEmpty() || offset !in 40..360
+        ) {
+            done(null, IllegalArgumentException("Invalid YouTube feed page"))
+            return
+        }
+        youtubeBrowseTask?.cancel(true)
+        val request = ++youtubeBrowseGeneration
+        youtubeBrowseTask =
+            worker.submit {
+                var page: CatalogPage? = null
+                var failure: Exception? = null
+                try {
+                    page = catalogRepository.page("youtube", "", offset)
+                } catch (error: Exception) {
+                    failure = error
+                }
+                handler.post {
+                    if (
+                        !closed &&
+                            request == youtubeBrowseGeneration &&
+                            homeViewModel.state.scope == scope
+                    ) {
+                        youtubeBrowseTask = null
+                        done(page, failure)
+                    }
+                }
+            }
+    }
+
+    private fun loadYouTubeActivityPage(
+        cursor: String,
+        done: (YouTubeActivityPage?, Exception?) -> Unit,
+    ) {
+        val scope = homeViewModel.state.scope
+        if (
+            closed ||
+                scope.provider != "youtube" ||
+                scope.query.isNotEmpty() ||
+                cursor.isBlank() ||
+                cursor.length > 512
+        ) {
+            done(null, IllegalArgumentException("Invalid YouTube activity page"))
+            return
+        }
+        youtubeBrowseTask?.cancel(true)
+        val request = ++youtubeBrowseGeneration
+        youtubeBrowseTask =
+            worker.submit {
+                var page: YouTubeActivityPage? = null
+                var failure: Exception? = null
+                try {
+                    page = homeRepository.loadYouTubeActivityPage(cursor)
+                } catch (error: Exception) {
+                    failure = error
+                }
+                handler.post {
+                    if (
+                        !closed &&
+                            request == youtubeBrowseGeneration &&
+                            homeViewModel.state.scope == scope
+                    ) {
+                        youtubeBrowseTask = null
+                        done(page, failure)
+                    }
+                }
+            }
+    }
+
+    private fun invalidateYouTubeBrowse() {
+        youtubeBrowseGeneration++
+        youtubeBrowseTask?.cancel(true)
+        youtubeBrowseTask = null
     }
 
     private fun error(e: Exception) {
@@ -834,10 +942,177 @@ class MainActivity : Activity() {
         AirPlayPairingDialog(this, model).show()
     }
 
+    private fun renderPlaybackProgress(status: String, positionMs: Int, durationMs: Int) {
+        val previousState = lastState
+        lastPosition = positionMs.coerceAtLeast(0)
+        lastDuration = durationMs.coerceAtLeast(0)
+        subtitleText.text =
+            if (status == "PLAYING" || status == "PAUSED") tracksModel.textAt(lastPosition) else ""
+        subtitleText.visibility = if (subtitleText.text.isEmpty()) View.GONE else View.VISIBLE
+        playerStatus.text =
+            getString(
+                R.string.player_status,
+                ui.localizedState(status),
+                ui.formatTime(lastPosition),
+                ui.formatTime(lastDuration),
+            )
+        if (::playerChrome.isInitialized) {
+            if (playerChrome.updateProgress(status, lastPosition, lastDuration)) {
+                playerFocus.rebuild(playerChrome.focusRows(), false)
+            }
+        }
+        content.updatePlaybackProgress(status, lastPosition, lastDuration)
+        if (
+            session.isNotEmpty() &&
+                (!::receiverViewModel.isInitialized || receiverViewModel.activeSession.isEmpty())
+        ) {
+            now.text = itemTitle
+        }
+        if (status == "PLAYING") window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (
+            status == "FAILED" &&
+                previousState != "FAILED" &&
+                foreground &&
+                receiverViewModel.activeSession.isEmpty() &&
+                session.isNotEmpty() &&
+                !youtubeIncoming
+        ) {
+            showPlaybackFailure()
+        }
+        lastState = status
+    }
+
+    private fun isIncomingAudioSession(): Boolean =
+        session.isNotEmpty() &&
+            session == incomingReceiverSession &&
+            currentItem?.kind == "audio" &&
+            currentItem?.provider in listOf("airplay", "spotify")
+
+    private fun hasReceiverTrackControls(): Boolean =
+        ::receiverViewModel.isInitialized &&
+            AudioTrackControlPolicy.isActiveReceiverAudio(
+                incoming = isIncomingAudioSession(),
+                provider = currentItem?.provider,
+                kind = currentItem?.kind,
+                sessionId = session,
+                activeReceiverSessionId = receiverViewModel.activeSession,
+            )
+
+    private fun hasReceiverTrackControls(state: PlaybackSession): Boolean {
+        val planSessionId = state.plan?.sessionId ?: return false
+        if (!::receiverViewModel.isInitialized) return false
+        return AudioTrackControlPolicy.isActiveReceiverAudio(
+            incoming = state.incoming,
+            provider = state.item?.provider,
+            kind = state.item?.kind,
+            sessionId = planSessionId,
+            activeReceiverSessionId = receiverViewModel.activeSession,
+        )
+    }
+
+    private fun receiverTrackCommand(action: String): Boolean {
+        if (!hasReceiverTrackControls()) return false
+        when (currentItem?.provider) {
+            "spotify" -> receiverViewModel.command(action, ::error)
+            "airplay" -> receiverViewModel.airplayCommand(action, ::error)
+            else -> return false
+        }
+        return true
+    }
+
+    private fun nextTrack() {
+        if (!receiverTrackCommand("next")) player.next()
+    }
+
+    private fun previousTrack() {
+        receiverTrackCommand("previous")
+    }
+
+    private fun senderTimelinePosition(
+        nowElapsedRealtimeMs: Long
+    ): ReceiverTimelinePolicy.Position? =
+        if (isIncomingAudioSession() && currentItem?.provider == "airplay") {
+            ReceiverTimelinePolicy.estimateForDisplay(receiverTimeline, nowElapsedRealtimeMs)
+        } else {
+            null
+        }
+
+    private fun receiverTimelineItemKey(item: MediaItem?): String {
+        item ?: return ""
+        if (item.id.isNotEmpty()) return item.id
+        return listOf(item.provider, item.title, item.subtitle).joinToString("\u001f")
+    }
+
+    private fun resetReceiverTimeline() {
+        receiverTimeline = ReceiverTimelinePolicy.State()
+        localAudioPositionMs = 0
+        localAudioDurationMs = 0
+        localReceiverSession = ""
+        localReceiverItemKey = ""
+        localOutputPaused = false
+        localPausePositionMs = 0
+        localPauseDurationMs = 0
+        clearPendingAirplayToggle()
+    }
+
     private fun updateReceiver(plan: ReceiverPlan) {
+        val sameIncomingAudioSession =
+            plan.sessionId.isNotEmpty() &&
+                plan.sessionId == session &&
+                plan.sessionId == incomingReceiverSession &&
+                plan.item?.kind == "audio" &&
+                plan.item.provider in listOf("airplay", "spotify")
+        val itemKey = receiverTimelineItemKey(plan.item)
+        if (sameIncomingAudioSession) {
+            val newIncomingTrack =
+                localReceiverSession != plan.sessionId || localReceiverItemKey != itemKey
+            if (newIncomingTrack) {
+                localAudioPositionMs = 0
+                localAudioDurationMs = 0
+                lastPosition = 0
+                lastDuration = 0
+                localOutputPaused = false
+                localPausePositionMs = 0
+                localPauseDurationMs = 0
+                clearPendingAirplayToggle()
+            }
+            localReceiverSession = plan.sessionId
+            localReceiverItemKey = itemKey
+            receiverTimeline =
+                if (plan.item.provider == "airplay") {
+                    ReceiverTimelinePolicy.observe(
+                        receiverTimeline,
+                        plan.sessionId,
+                        itemKey,
+                        plan.senderPositionKnown,
+                        plan.senderPositionMs,
+                        plan.senderDurationMs,
+                        plan.senderPositionAgeMs,
+                        plan.state,
+                        android.os.SystemClock.elapsedRealtime(),
+                        localOutputPaused,
+                    )
+                } else {
+                    ReceiverTimelinePolicy.State()
+                }
+        } else {
+            receiverTimeline = ReceiverTimelinePolicy.State()
+            localReceiverSession = ""
+            localReceiverItemKey = ""
+            localOutputPaused = false
+            localPausePositionMs = 0
+            localPauseDurationMs = 0
+            clearPendingAirplayToggle()
+        }
         currentItem = plan.item
         receiverState = plan.state
-        if (plan.state.isNotEmpty()) lastState = plan.state
+        if (
+            plan.state == pendingAirplayToggleTarget &&
+                plan.sessionId == pendingAirplayToggleSession
+        ) {
+            clearPendingAirplayToggle()
+        }
         player.receiverStatus(plan.item, plan.state)
         itemTitle = plan.item?.title ?: getString(R.string.screen_mirroring)
         now.text =
@@ -857,22 +1132,39 @@ class MainActivity : Activity() {
         if (::playerChrome.isInitialized && full) {
             updatePlayerChrome()
         }
+        if (sameIncomingAudioSession) {
+            val measured = senderTimelinePosition(android.os.SystemClock.elapsedRealtime())
+            val displayedStatus =
+                ReceiverTimelinePolicy.displayState(
+                    plan.state.ifEmpty { lastState },
+                    localOutputPaused,
+                )
+            renderPlaybackProgress(
+                displayedStatus,
+                if (localOutputPaused) localPausePositionMs
+                else measured?.positionMs ?: localAudioPositionMs,
+                if (localOutputPaused) localPauseDurationMs
+                else measured?.durationMs ?: localAudioDurationMs,
+            )
+        }
     }
 
     private fun receiveCast(plan: ReceiverPlan?) {
         if (!foreground || !player.ready) return
-        when (
-            val change =
-                receiverViewModel.transition(
-                    plan,
-                    PlaybackContext(
-                        if (youtubeIncoming) null else currentItem,
-                        full,
-                        lastState == "PLAYING",
-                    ),
-                )
-        ) {
+        val playbackContext =
+            PlaybackContext(
+                if (youtubeIncoming) null else currentItem,
+                full,
+                lastState == "PLAYING",
+                incomingReceiverSession,
+            )
+        val preserveReceiverFullscreen =
+            plan?.let {
+                ReceiverPlaybackPolicy.preserveFullscreenForAudioChange(playbackContext, it)
+            } ?: false
+        when (val change = receiverViewModel.transition(plan, playbackContext)) {
             is ReceiverChange.Restore -> {
+                incomingReceiverSession = ""
                 stopPlayback(keepReceiver = true)
                 restoreFullscreen = change.previous?.fullscreen ?: false
                 if (!player.restoreInterrupted())
@@ -891,6 +1183,9 @@ class MainActivity : Activity() {
                 updateReceiver(change.plan)
             }
             is ReceiverChange.Reconnect -> {
+                resetReceiverTimeline()
+                lastPosition = 0
+                lastDuration = 0
                 updateReceiver(change.plan)
                 if (audioController.acquire())
                     player.play(
@@ -905,6 +1200,7 @@ class MainActivity : Activity() {
                 if (universalReception) player.standbyYouTube() else player.disableYouTube()
                 stopPlayback(keepReceiver = true)
                 session = change.plan.sessionId
+                incomingReceiverSession = session
                 stream = api.base + change.plan.path
                 mime = change.plan.mime
                 updateReceiver(change.plan)
@@ -926,7 +1222,7 @@ class MainActivity : Activity() {
                 lastReport = 0
                 lastState = ""
                 setSeekable(change.plan.seekable && !change.plan.live)
-                setFullscreen(change.plan.fullscreen)
+                setFullscreen(preserveReceiverFullscreen || change.plan.fullscreen)
                 if (audioController.acquire())
                     player.play(
                         stream,
@@ -1013,16 +1309,9 @@ class MainActivity : Activity() {
                 artworkDecoder,
                 TvPlayerActions(
                     seekBack = { seek(-10000) },
-                    previous = {
-                        if (
-                            currentItem?.provider == "spotify" &&
-                                receiverViewModel.activeSession == session
-                        ) {
-                            receiverViewModel.command("previous", ::error)
-                        }
-                    },
+                    previous = { previousTrack() },
                     playPause = { togglePlayback() },
-                    next = { player.next() },
+                    next = { nextTrack() },
                     seekForward = { seek(10000) },
                     description = {
                         if (playerChrome.focusDetails()) {
@@ -1086,9 +1375,19 @@ class MainActivity : Activity() {
     private fun restorePlayback(state: PlaybackSession) {
         if (playbackPending) return
         youtubeIncoming = state.incoming && state.item?.provider == "youtube"
-        nextButton.isEnabled = state.canNext
+        incomingReceiverSession =
+            if (
+                state.incoming &&
+                    !youtubeIncoming &&
+                    state.item?.provider in listOf("airplay", "spotify")
+            ) {
+                state.plan?.sessionId ?: ""
+            } else ""
+        val receiverTrackControls = hasReceiverTrackControls(state)
+        val canShowNext = AudioTrackControlPolicy.canShowNext(state.canNext, receiverTrackControls)
+        nextButton.isEnabled = canShowNext
         if (::playerChrome.isInitialized) {
-            playerChrome.setCanNext(state.canNext)
+            playerChrome.setCanNext(canShowNext)
         }
         if (state.error && !queueFailed)
             Toast.makeText(this, R.string.next_failed, Toast.LENGTH_LONG).show()
@@ -1103,6 +1402,7 @@ class MainActivity : Activity() {
         }
         if (session != plan.sessionId) {
             val wasPlaying = session.isNotEmpty()
+            resetReceiverTimeline()
             adoptPlan(plan)
             currentItem = state.item
             itemTitle = state.item?.title ?: getString(R.string.screen_mirroring)
@@ -1128,6 +1428,12 @@ class MainActivity : Activity() {
             lastState = ""
             lastPosition = state.progress.positionMs
             lastDuration = state.progress.durationMs
+            localAudioPositionMs = state.progress.positionMs.coerceAtLeast(0)
+            localAudioDurationMs = state.progress.durationMs.coerceAtLeast(0)
+            if (state.incoming && state.item?.kind == "audio") {
+                localReceiverSession = session
+                localReceiverItemKey = receiverTimelineItemKey(state.item)
+            }
             setFullscreen(if (wasPlaying) full else restoreFullscreen)
         }
     }
@@ -1143,6 +1449,14 @@ class MainActivity : Activity() {
     private fun showQuality() {
         val requestedSession = session
         if (requestedSession.isEmpty()) return
+        if (
+            requestedSession == incomingReceiverSession &&
+                currentItem?.provider == "airplay" &&
+                currentItem?.kind == "audio"
+        ) {
+            showAirPlayQualityRoute()
+            return
+        }
         qualityModel.inventory(
             { inventory ->
                 QualityDialog(this).show(inventory) { selectedId ->
@@ -1158,10 +1472,26 @@ class MainActivity : Activity() {
                             )
                         val incoming =
                             youtubeIncoming || receiverViewModel.activeSession == requestedSession
+                        val requestedPosition = lastPosition
                         qualityModel.select(
                             selectedId,
-                            lastPosition,
+                            requestedPosition,
                             { plan ->
+                                if (
+                                    currentItem?.provider == "youtube" &&
+                                        selectedId != "auto" &&
+                                        requestedPosition > 0 &&
+                                        plan.mode == "REMUX" &&
+                                        !plan.seekable &&
+                                        plan.resumePositionMs == 0
+                                ) {
+                                    Toast.makeText(
+                                            this,
+                                            R.string.youtube_quality_restarts_from_beginning,
+                                            Toast.LENGTH_LONG,
+                                        )
+                                        .show()
+                                }
                                 adoptPlan(plan)
                                 retainPlan(plan, incoming, paused)
                                 attachTracks(plan)
@@ -1181,6 +1511,47 @@ class MainActivity : Activity() {
             },
             ::error,
         )
+    }
+
+    private fun showAirPlayQualityRoute() {
+        val dialog = android.app.Dialog(this)
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        val panel =
+            ui.column().apply {
+                setPadding(ui.dp(22), ui.dp(18), ui.dp(22), ui.dp(18))
+                setBackgroundDrawable(ui.box(ui.panel, ui.muted))
+            }
+        panel.addView(
+            ui.text(getString(R.string.airplay_quality_title), 22f).apply {
+                typeface = ui.bold
+                setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(14))
+            }
+        )
+        panel.addView(
+            ui.text(getString(R.string.airplay_quality_summary), 17f, ui.muted).apply {
+                setPadding(ui.dp(8), ui.dp(4), ui.dp(8), ui.dp(18))
+                setLineSpacing(ui.dp(4).toFloat(), 1f)
+            }
+        )
+        val closeButton = ui.primary(R.string.close) { dialog.dismiss() }
+        panel.addView(
+            ui.row().apply {
+                gravity = Gravity.RIGHT or Gravity.CENTER_VERTICAL
+                addView(closeButton)
+            }
+        )
+        dialog.setContentView(panel)
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            attributes = attributes.apply { dimAmount = 0.72f }
+        }
+        dialog.show()
+        val width =
+            minOf(ui.dp(540), resources.displayMetrics.widthPixels - ui.dp(48))
+                .coerceAtLeast(ui.dp(300))
+        dialog.window?.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT)
+        closeButton.requestFocus()
     }
 
     private fun showTracks(kind: String) {
@@ -1228,12 +1599,26 @@ class MainActivity : Activity() {
     }
 
     private fun setPlaying(playing: Boolean) {
-        if (::playerChrome.isInitialized) playerChrome.setOptimisticPlaying(playing)
         if (currentItem?.provider == "spotify" && receiverViewModel.activeSession == session) {
+            if (::playerChrome.isInitialized) playerChrome.setOptimisticPlaying(playing)
             receiverViewModel.command(if (playing) "resume" else "pause", ::error)
+        } else if (isIncomingAirplayAudioSession()) {
+            if (receiverState !in listOf("PLAYING", "PAUSED")) {
+                if (::playerChrome.isInitialized) {
+                    playerChrome.setOptimisticPlaying(receiverState == "PLAYING")
+                }
+            } else if ((receiverState == "PLAYING") != playing) {
+                requestAirplayPlayPause(playing)
+            } else if (::playerChrome.isInitialized) {
+                playerChrome.setOptimisticPlaying(playing)
+            }
         } else if (playing) {
+            if (::playerChrome.isInitialized) playerChrome.setOptimisticPlaying(playing)
             if (audioController.acquire()) player.resume()
-        } else player.pause()
+        } else {
+            if (::playerChrome.isInitialized) playerChrome.setOptimisticPlaying(playing)
+            player.pause()
+        }
     }
 
     private fun togglePlayback() {
@@ -1246,6 +1631,17 @@ class MainActivity : Activity() {
             receiverViewModel.command(if (target) "resume" else "pause", ::error)
             return
         }
+        if (isIncomingAirplayAudioSession()) {
+            val target = ReceiverTimelinePolicy.desiredPlayStateForToggle(receiverState)
+            if (target == null || !hasReceiverTrackControls()) {
+                if (::playerChrome.isInitialized) {
+                    playerChrome.setOptimisticPlaying(receiverState == "PLAYING")
+                }
+                return
+            }
+            requestAirplayPlayPause(target)
+            return
+        }
         if (session.isNotEmpty() && foreground && audioController.acquire()) {
             if (::playerChrome.isInitialized) {
                 val target = playerChrome.optimisticPlaying() ?: (lastState != "PLAYING")
@@ -1253,6 +1649,41 @@ class MainActivity : Activity() {
             }
             player.toggle()
         }
+    }
+
+    private fun isIncomingAirplayAudioSession(): Boolean =
+        isIncomingAudioSession() && currentItem?.provider == "airplay"
+
+    private fun requestAirplayPlayPause(targetPlaying: Boolean) {
+        if (!hasReceiverTrackControls()) return
+        if (pendingAirplayToggleSession == session) {
+            if (::playerChrome.isInitialized) {
+                playerChrome.setOptimisticPlaying(pendingAirplayToggleTarget == "PLAYING")
+            }
+            return
+        }
+
+        val commandSession = session
+        val targetState = if (targetPlaying) "PLAYING" else "PAUSED"
+        pendingAirplayToggleSession = commandSession
+        pendingAirplayToggleTarget = targetState
+        if (::playerChrome.isInitialized) {
+            playerChrome.setOptimisticPlaying(targetPlaying)
+        }
+        receiverViewModel.airplayCommand("playpause") { failure ->
+            if (pendingAirplayToggleSession == commandSession) {
+                clearPendingAirplayToggle()
+                if (::playerChrome.isInitialized) {
+                    playerChrome.setOptimisticPlaying(receiverState == "PLAYING")
+                }
+            }
+            error(failure)
+        }
+    }
+
+    private fun clearPendingAirplayToggle() {
+        pendingAirplayToggleSession = ""
+        pendingAirplayToggleTarget = ""
     }
 
     private fun startPlayback(
@@ -1466,8 +1897,13 @@ class MainActivity : Activity() {
         }
         val isAudio = currentItem?.kind == "audio" || (currentItem?.provider == "spotify")
         val accent = contextAccent()
-        val canPrev = currentItem?.provider == "spotify"
-        val canNext = ::nextButton.isInitialized && nextButton.isEnabled
+        val receiverTrackControls = hasReceiverTrackControls()
+        val canPrev = receiverTrackControls
+        val canNext =
+            AudioTrackControlPolicy.canShowNext(
+                ::nextButton.isInitialized && nextButton.isEnabled,
+                receiverTrackControls,
+            )
         val related = if (currentItem?.provider == "youtube") getYouTubeRelated() else emptyList()
         val hasMore = relatedModel.hasMore
         val displayItem =
@@ -1564,9 +2000,11 @@ class MainActivity : Activity() {
         playbackFailure.dismiss()
         playbackPending = false
         showPlaybackFeedback(null)
+        resetReceiverTimeline()
         if (!keepReceiver && receiverViewModel.activeSession.isNotEmpty())
             receiverViewModel.dismiss(receiverViewModel.activeSession)
         currentItem = null
+        incomingReceiverSession = ""
         receiverState = ""
         receiverInfo.visibility = View.GONE
         receiverArtwork.visibility = View.GONE
@@ -1582,6 +2020,9 @@ class MainActivity : Activity() {
         subtitleText.text = ""
         subtitleText.visibility = View.GONE
         timelineOffset = 0
+        lastPosition = 0
+        lastDuration = 0
+        lastState = "STOPPED"
         full = false
         if (endSession) player.end(preserveInterrupted = keepReceiver)
         if (::playerChrome.isInitialized) playerChrome.visibility = View.GONE
@@ -2002,6 +2443,7 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         playbackFailure.dismiss()
         closed = true
+        invalidateYouTubeBrowse()
         receiverOptionsPanel?.dismiss()
         audioOptionsPanel?.dismiss()
         events.close()

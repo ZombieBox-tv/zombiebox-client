@@ -2,6 +2,7 @@ package io.github.diegog0477.zombiebox.client.features.artwork.platform
 
 import android.app.ActivityManager
 import android.content.Context
+import io.github.diegog0477.zombiebox.client.features.artwork.domain.repository.ArtworkRequestRole
 import io.github.diegog0477.zombiebox.client.features.diagnostics.platform.HardwareMemory
 
 data class ImageBudget(val lowMemory: Boolean) {
@@ -16,6 +17,18 @@ data class ImageBudget(val lowMemory: Boolean) {
 
     val cardWidth: Int
         get() = if (lowMemory) 240 else 320
+
+    val audioArtEdge: Int
+        get() = if (lowMemory) 600 else 800
+
+    fun targetEdge(role: ArtworkRequestRole): Int =
+        when (role) {
+            ArtworkRequestRole.DEFAULT -> cardWidth
+            ArtworkRequestRole.HERO -> heroWidth
+            ArtworkRequestRole.AUDIO -> audioArtEdge
+        }
+
+    fun decodedBytesWithinBudget(bytes: Long): Boolean = bytes in 1..decodedBytes
 
     companion object {
         fun discover(context: Context): ImageBudget {

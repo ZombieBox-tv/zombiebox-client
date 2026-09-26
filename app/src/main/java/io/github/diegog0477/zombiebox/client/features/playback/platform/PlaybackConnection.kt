@@ -147,8 +147,9 @@ class PlaybackConnection(
         video: Boolean = true,
         seekable: Boolean = true,
     ) = command {
-        if (it.model.state.plan?.url != url) return@command
-        if (it.focus.acquire()) it.player.play(url, position, autoplay, video, seekable)
+        val plan = it.model.state.plan
+        if (plan?.url != url) return@command
+        if (it.focus.acquire()) it.player.play(url, position, autoplay, video, seekable, plan.mime)
         else it.model.mediaState("FAILED", position, 0)
     }
 

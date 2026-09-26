@@ -8,6 +8,7 @@ import android.graphics.Path
 import android.graphics.RectF
 import android.widget.ImageView
 import io.github.diegog0477.zombiebox.client.R
+import kotlin.math.roundToInt
 
 /** Provider artwork uses lossless official raster marks; local system symbols stay code-drawn. */
 class ServiceMarkView(context: Context, service: String, accent: Int) : ImageView(context) {
@@ -42,8 +43,16 @@ class ServiceMarkView(context: Context, service: String, accent: Int) : ImageVie
         if (drawable != null) return
         val size = minOf(width, height).toFloat()
         if (size <= 0f) return
+        paint.style = Paint.Style.FILL
         canvas.save()
         canvas.translate((width - size) / 2f, (height - size) / 2f)
+        val detailedSystemMark = service == "airplay" || service == "android_mirror"
+        if (detailedSystemMark) {
+            if (service == "airplay") drawAirPlayMark(canvas, size)
+            else drawAndroidMirrorMark(canvas, size)
+            canvas.restore()
+            return
+        }
         canvas.scale(size / 40f, size / 40f)
         when (service) {
             "youtube" -> {
@@ -70,15 +79,6 @@ class ServiceMarkView(context: Context, service: String, accent: Int) : ImageVie
                 triangle(canvas, 20f, 2f, 20f, 38f, 2f, 20f)
                 paint.color = Color.WHITE
                 triangle(canvas, 16f, 13f, 16f, 27f, 28f, 20f)
-            }
-            "airplay",
-            "android_mirror" -> {
-                paint.color = accent
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 2.5f
-                canvas.drawRoundRect(RectF(3f, 5f, 37f, 30f), 2f, 2f, paint)
-                paint.style = Paint.Style.FILL
-                triangle(canvas, 20f, 23f, 31f, 37f, 9f, 37f)
             }
             "iptv" -> {
                 paint.color = accent
@@ -123,4 +123,86 @@ class ServiceMarkView(context: Context, service: String, accent: Int) : ImageVie
             }
         canvas.drawPath(shape, paint)
     }
+
+    private fun drawAirPlayMark(canvas: Canvas, size: Float) {
+        val scale = size / 64f
+        paint.color = accent
+        paint.style = Paint.Style.FILL
+        val edge = (3.5f * scale).roundToInt().coerceAtLeast(2).toFloat()
+        drawPixelFrame(canvas, scale, 7f, 7f, 57f, 42f, edge)
+        paint.style = Paint.Style.FILL
+        triangle(
+            canvas,
+            pixelCoordinate(19f, scale),
+            pixelCoordinate(57f, scale),
+            pixelCoordinate(45f, scale),
+            pixelCoordinate(57f, scale),
+            pixelCoordinate(32f, scale),
+            pixelCoordinate(38f, scale),
+        )
+    }
+
+    private fun drawAndroidMirrorMark(canvas: Canvas, size: Float) {
+        val scale = size / 64f
+        paint.color = accent
+        paint.style = Paint.Style.FILL
+        val edge = (3.2f * scale).roundToInt().coerceAtLeast(2).toFloat()
+        drawPixelFrame(canvas, scale, 23f, 6f, 59f, 38f, edge)
+        drawPixelFrame(canvas, scale, 5f, 22f, 29f, 58f, edge)
+        val left = pixelCoordinate(13f, scale)
+        val right = pixelCoordinate(21f, scale)
+        val bottom = pixelCoordinate(52f, scale)
+        canvas.drawRect(left, bottom, right, bottom + edge, paint)
+
+        val oldStyle = paint.style
+        val oldWidth = paint.strokeWidth
+        val oldCap = paint.strokeCap
+        val oldJoin = paint.strokeJoin
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = (2.5f * scale).roundToInt().coerceAtLeast(2).toFloat()
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeJoin = Paint.Join.ROUND
+        val startX = pixelStrokeCoordinate(23f, scale)
+        val startY = pixelStrokeCoordinate(31f, scale)
+        val cornerX = pixelStrokeCoordinate(38f, scale)
+        val cornerY = pixelStrokeCoordinate(18f, scale)
+        val arrow =
+            Path().apply {
+                moveTo(startX, startY)
+                lineTo(cornerX, cornerY)
+                lineTo(pixelStrokeCoordinate(32f, scale), cornerY)
+                moveTo(cornerX, cornerY)
+                lineTo(cornerX, pixelStrokeCoordinate(24f, scale))
+            }
+        canvas.drawPath(arrow, paint)
+        paint.style = oldStyle
+        paint.strokeWidth = oldWidth
+        paint.strokeCap = oldCap
+        paint.strokeJoin = oldJoin
+    }
+
+    private fun drawPixelFrame(
+        canvas: Canvas,
+        scale: Float,
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        thickness: Float,
+    ) {
+        val left = pixelCoordinate(x1, scale)
+        val top = pixelCoordinate(y1, scale)
+        val right = pixelCoordinate(x2, scale)
+        val bottom = pixelCoordinate(y2, scale)
+        canvas.drawRect(left, top, right, top + thickness, paint)
+        canvas.drawRect(left, bottom - thickness, right, bottom, paint)
+        canvas.drawRect(left, top, left + thickness, bottom, paint)
+        canvas.drawRect(right - thickness, top, right, bottom, paint)
+    }
+
+    private fun pixelCoordinate(coordinate: Float, scale: Float): Float =
+        (coordinate * scale).roundToInt().toFloat()
+
+    private fun pixelStrokeCoordinate(coordinate: Float, scale: Float): Float =
+        pixelCoordinate(coordinate, scale) + 0.5f
 }

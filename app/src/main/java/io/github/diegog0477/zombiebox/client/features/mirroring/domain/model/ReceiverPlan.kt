@@ -12,4 +12,8 @@ data class ReceiverPlan(
     val live: Boolean = true,
     val seekable: Boolean = false,
     val mode: String = "DIRECT_PLAY",
+    val senderPositionKnown: Boolean = false,
+    val senderPositionMs: Int = 0,
+    val senderDurationMs: Int = 0,
+    val senderPositionAgeMs: Int = 0,
 )

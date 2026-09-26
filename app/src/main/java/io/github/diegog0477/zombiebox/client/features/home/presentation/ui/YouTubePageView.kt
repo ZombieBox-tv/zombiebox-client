@@ -9,6 +9,7 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -32,10 +33,23 @@ class YouTubePageView(
     private val decoder: ArtworkDecoder,
     private val actions: HomeActions,
 ) {
+    private val itemIds = LinkedHashSet<String>()
+    private var columns = 1
+    private var nextOffset = -1
+    private var activityFeed = false
+    private var nextActivityCursor = ""
+    private var loadingMore = false
+    private var failedAutoOffset = -1
+    private var failedAutoCursor = ""
+    private val loadedActivityCursors = HashSet<String>()
+    private var itemsParent: LinearLayout? = null
+    private var pageFocusRows: ArrayList<Pair<String, ViewGroup>>? = null
+    private var loadMoreButton: Button? = null
 
     fun render(
         parent: LinearLayout,
         snapshot: HomeSnapshot,
+        isHomeFeed: Boolean,
         isDockedLandscape: Boolean,
         widthDp: Float,
         focusRows: ArrayList<Pair<String, ViewGroup>>,
@@ -47,6 +61,18 @@ class YouTubePageView(
             snapshot.sections
                 .flatMap { it.items }
                 .filter { it.provider == "youtube" || it.provider.isEmpty() }
+        itemIds.clear()
+        items.forEach { item -> itemIds.add(item.id) }
+        activityFeed = isHomeFeed && snapshot.youtubeActivityFeed
+        nextOffset = if (isHomeFeed && !activityFeed) snapshot.youtubeNextOffset else -1
+        nextActivityCursor = if (activityFeed) snapshot.youtubeNextCursor else ""
+        loadingMore = false
+        failedAutoOffset = -1
+        failedAutoCursor = ""
+        loadedActivityCursors.clear()
+        itemsParent = parent
+        pageFocusRows = focusRows
+        loadMoreButton = null
         val hasContent = featured != null || items.isNotEmpty()
 
         val isReady = CatalogUiPolicy.isReady(serviceState)
@@ -73,12 +99,16 @@ class YouTubePageView(
         if (canSearch) leadRow.addView(searchAction)
 
         val catalogAction =
-            ui.button(R.string.view_all) { actions.catalog("youtube") }
+            ui.button(
+                    if (hasContent && !activityFeed) R.string.view_all else R.string.browse_library
+                ) {
+                    actions.catalog("youtube")
+                }
                 .apply {
                     tag = "youtube:action:catalog"
                     textSize = 12f
                 }
-        if (hasContent && canCatalog) leadRow.addView(catalogAction)
+        if ((hasContent || isHomeFeed) && canCatalog) leadRow.addView(catalogAction)
 
         val receiverAction =
             ui.button(R.string.youtube_receiver) { actions.youtubeReceiver() }
@@ -90,6 +120,19 @@ class YouTubePageView(
 
         parent.addView(leadRow, LinearLayout.LayoutParams(-1, -2))
         focusRows.add(Pair("youtube:actions", leadRow))
+        if (isHomeFeed) {
+            parent.addView(
+                ui.text(
+                    context.getString(
+                        if (activityFeed) R.string.youtube_activity_feed
+                        else R.string.youtube_home_feed
+                    ),
+                    12f,
+                    ui.muted,
+                ),
+                LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, ui.dp(6)) },
+            )
+        }
 
         // 2. Optional featured video hero banner
         if (featured != null) {
@@ -109,46 +152,209 @@ class YouTubePageView(
 
         if (items.isNotEmpty()) {
             // 16:9 Multi-row thumbnail grid adapting columns to screen form factor
-            val columns =
+            columns =
                 when {
                     isDockedLandscape -> 3
                     widthDp >= 600f -> 2
                     else -> 1
                 }
+            appendRows(parent, items, focusRows, null)
+            if (isHomeFeed && hasMore()) addLoadMore(parent, focusRows)
+        }
+    }
 
-            val rows = items.chunked(columns)
-            for ((rowIndex, rowItems) in rows.withIndex()) {
-                val rowContainer =
-                    LinearLayout(context).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        layoutParams =
-                            LinearLayout.LayoutParams(-1, -2).apply {
-                                setMargins(0, ui.dp(3), 0, ui.dp(4))
-                            }
-                    }
+    fun onFocusChanged(focused: View?) {
+        if (focused == null || !hasMore() || loadingMore) return
+        val itemId = (focused.tag as? String)?.removePrefix("youtube:item:") ?: return
+        val index = itemIds.indexOf(itemId)
+        if (index < 0) return
+        val prefetchRows = 2
+        val firstPrefetchIndex = (itemIds.size - columns * prefetchRows).coerceAtLeast(0)
+        if (index >= firstPrefetchIndex) requestMore(autoTriggered = true)
+    }
 
-                for (item in rowItems) {
-                    val card = createVideoCard(item)
-                    rowContainer.addView(card)
+    private fun addLoadMore(parent: LinearLayout, focusRows: ArrayList<Pair<String, ViewGroup>>) {
+        val row = ui.row()
+        val button =
+            ui.button(R.string.youtube_more_videos) { requestMore() }
+                .apply {
+                    tag = "youtube:load-more"
+                    textSize = 13f
                 }
+        row.addView(button)
+        parent.addView(row)
+        focusRows.add(Pair("youtube:load-more", row))
+        loadMoreButton = button
+    }
 
-                // Append invisible spacers to preserve column widths on the last row
-                if (rowItems.size < columns) {
-                    for (i in 0 until (columns - rowItems.size)) {
-                        val spacer =
-                            View(context).apply {
-                                layoutParams =
-                                    LinearLayout.LayoutParams(0, 0, 1f).apply {
-                                        setMargins(ui.dp(4), ui.dp(3), ui.dp(4), ui.dp(5))
-                                    }
-                            }
-                        rowContainer.addView(spacer)
-                    }
-                }
-
-                parent.addView(rowContainer)
-                focusRows.add(Pair("youtube:row:$rowIndex", rowContainer))
+    private fun requestMore(autoTriggered: Boolean = false) {
+        if (loadingMore || !hasMore() || itemIds.size >= MAX_FEED_ITEMS) return
+        val requestedOffset = if (activityFeed) -1 else nextOffset
+        val requestedCursor = if (activityFeed) nextActivityCursor else ""
+        val failedAutoRequest =
+            if (activityFeed) requestedCursor.isNotBlank() && requestedCursor == failedAutoCursor
+            else requestedOffset == failedAutoOffset
+        if (autoTriggered && failedAutoRequest) return
+        if (activityFeed && requestedCursor in loadedActivityCursors) {
+            nextActivityCursor = ""
+            removeLoadMore()
+            actions.refreshHomeFocus(true)
+            return
+        }
+        if (!autoTriggered) {
+            failedAutoOffset = -1
+            failedAutoCursor = ""
+        }
+        val parent = itemsParent ?: return
+        val focusRows = pageFocusRows ?: return
+        val button = loadMoreButton ?: return
+        val rootAtStart = parent.rootView
+        loadingMore = true
+        button.setText(R.string.youtube_loading_more)
+        if (activityFeed) {
+            actions.loadYouTubeActivityPage(requestedCursor) { page, failure ->
+                completePage(
+                    page?.items,
+                    requestedOffset,
+                    requestedCursor,
+                    page?.nextCursor.orEmpty(),
+                    failure
+                        ?: if (page == null) IllegalStateException("Missing YouTube activity page")
+                        else null,
+                    parent,
+                    rootAtStart,
+                    focusRows,
+                    button,
+                )
             }
+        } else {
+            actions.loadYouTubePage(requestedOffset) { page, failure ->
+                completePage(
+                    page?.items,
+                    requestedOffset,
+                    requestedCursor,
+                    "",
+                    failure
+                        ?: if (page == null) IllegalStateException("Missing YouTube page")
+                        else null,
+                    parent,
+                    rootAtStart,
+                    focusRows,
+                    button,
+                    page?.nextOffset ?: -1,
+                )
+            }
+        }
+    }
+
+    private fun completePage(
+        pageItems: List<MediaItem>?,
+        requestedOffset: Int,
+        requestedCursor: String,
+        returnedCursor: String,
+        failure: Exception?,
+        parent: LinearLayout,
+        rootAtStart: View,
+        focusRows: ArrayList<Pair<String, ViewGroup>>,
+        button: Button,
+        returnedOffset: Int = -1,
+    ) {
+        if (parent.rootView !== rootAtStart || loadMoreButton !== button) return
+        loadingMore = false
+        if (failure != null || pageItems == null) {
+            if (activityFeed) failedAutoCursor = requestedCursor
+            else failedAutoOffset = requestedOffset
+            button.setText(R.string.youtube_retry_feed)
+            return
+        }
+
+        val additions = ArrayList<MediaItem>()
+        val remaining = MAX_FEED_ITEMS - itemIds.size
+        for (item in pageItems) {
+            if (additions.size >= remaining) break
+            if (
+                item.provider == "youtube" &&
+                    item.kind == "video" &&
+                    item.playable &&
+                    itemIds.add(item.id)
+            ) {
+                additions.add(item)
+            }
+        }
+        if (additions.isNotEmpty()) appendRows(parent, additions, focusRows, button.parent as? View)
+        if (activityFeed) {
+            loadedActivityCursors.add(requestedCursor)
+            nextActivityCursor =
+                if (
+                    returnedCursor.isBlank() ||
+                        returnedCursor == requestedCursor ||
+                        returnedCursor in loadedActivityCursors ||
+                        itemIds.size >= MAX_FEED_ITEMS
+                ) {
+                    ""
+                } else {
+                    returnedCursor
+                }
+        } else {
+            nextOffset =
+                if (returnedOffset <= requestedOffset || itemIds.size >= MAX_FEED_ITEMS) {
+                    -1
+                } else {
+                    returnedOffset
+                }
+        }
+        if (!hasMore()) {
+            removeLoadMore(parent)
+        } else {
+            button.setText(R.string.youtube_more_videos)
+        }
+        actions.refreshHomeFocus(!hasMore())
+    }
+
+    private fun hasMore(): Boolean =
+        if (activityFeed) nextActivityCursor.isNotBlank() else nextOffset >= 0
+
+    private fun removeLoadMore(parent: LinearLayout? = itemsParent) {
+        val button = loadMoreButton ?: return
+        val row = button.parent as? ViewGroup
+        if (row != null) parent?.removeView(row)
+        pageFocusRows?.removeAll { it.first == "youtube:load-more" }
+        loadMoreButton = null
+    }
+
+    private fun appendRows(
+        parent: LinearLayout,
+        items: List<MediaItem>,
+        focusRows: ArrayList<Pair<String, ViewGroup>>,
+        insertBefore: View?,
+    ) {
+        val rowBase = focusRows.count { it.first.startsWith("youtube:row:") }
+        var parentIndex = insertBefore?.let(parent::indexOfChild) ?: parent.childCount
+        var focusIndex = focusRows.indexOfFirst { it.first == "youtube:load-more" }
+        if (focusIndex < 0) focusIndex = focusRows.size
+
+        for ((pageRow, rowItems) in items.chunked(columns).withIndex()) {
+            val row =
+                LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams =
+                        LinearLayout.LayoutParams(-1, -2).apply {
+                            setMargins(0, ui.dp(3), 0, ui.dp(4))
+                        }
+                }
+            rowItems.forEach { row.addView(createVideoCard(it)) }
+            repeat((columns - rowItems.size).coerceAtLeast(0)) {
+                row.addView(
+                    View(context).apply {
+                        layoutParams =
+                            LinearLayout.LayoutParams(0, 0, 1f).apply {
+                                setMargins(ui.dp(4), ui.dp(3), ui.dp(4), ui.dp(5))
+                            }
+                    }
+                )
+            }
+            parent.addView(row, parentIndex++)
+            focusRows.add(focusIndex++, Pair("youtube:row:${rowBase + pageRow}", row))
         }
     }
 
@@ -313,5 +519,9 @@ class YouTubePageView(
             addState(intArrayOf(android.R.attr.state_pressed), focusedLayer)
             addState(intArrayOf(), normalBg)
         }
+    }
+
+    private companion object {
+        const val MAX_FEED_ITEMS = 400
     }
 }

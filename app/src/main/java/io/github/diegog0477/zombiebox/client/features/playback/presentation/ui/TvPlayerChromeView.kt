@@ -2,6 +2,7 @@ package io.github.diegog0477.zombiebox.client.features.playback.presentation.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
@@ -21,6 +22,7 @@ import io.github.diegog0477.zombiebox.client.R
 import io.github.diegog0477.zombiebox.client.core.model.MediaItem
 import io.github.diegog0477.zombiebox.client.core.ui.TvTypography
 import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
+import io.github.diegog0477.zombiebox.client.features.artwork.domain.repository.ArtworkRequestRole
 import io.github.diegog0477.zombiebox.client.features.artwork.platform.ArtworkDecoder
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.ArtworkImageView
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel.ArtworkViewModel
@@ -43,6 +45,28 @@ data class TvPlayerActions(
     val playItem: (MediaItem) -> Unit,
     val loadMoreRelated: (() -> Unit)? = null,
 )
+
+/** Keeps receiver track navigation independent of transient decoder playback status. */
+object AudioTrackControlPolicy {
+    private val receiverProviders = setOf("airplay", "spotify")
+
+    fun isActiveReceiverAudio(
+        incoming: Boolean,
+        provider: String?,
+        kind: String?,
+        sessionId: String,
+        activeReceiverSessionId: String,
+    ): Boolean =
+        incoming &&
+            kind == "audio" &&
+            provider != null &&
+            provider in receiverProviders &&
+            sessionId.isNotEmpty() &&
+            sessionId == activeReceiverSessionId
+
+    fun canShowNext(localQueueCanNext: Boolean, activeReceiverAudio: Boolean): Boolean =
+        localQueueCanNext || activeReceiverAudio
+}
 
 /**
  * Modern TV player chrome for Zombie Box TV.
@@ -67,6 +91,7 @@ class TvPlayerChromeView(
 ) : FrameLayout(context) {
 
     private var accentColor = ui.green
+    private var audioArtworkColor: Int? = null
     private var isAudioMode = false
     private var currentItem: MediaItem? = null
     private var isPlaying = false
@@ -138,6 +163,7 @@ class TvPlayerChromeView(
     val audioNextButton: ImageButton
     val audioAudioTracksButton: ImageButton
     val audioSubtitlesButton: ImageButton
+    val audioQualityButton: ImageButton
     val audioMinimizeButton: ImageButton
     val audioExternalButton: ImageButton
     val audioStopButton: ImageButton
@@ -443,18 +469,25 @@ class TvPlayerChromeView(
         audioOverlay = FrameLayout(context).apply { visibility = GONE }
         addView(audioOverlay, LayoutParams(-1, -1))
 
+        val displayMetrics = resources.displayMetrics
+        val audioWidthDp = displayMetrics.widthPixels / displayMetrics.density
+        val wideAudioLayout =
+            displayMetrics.widthPixels > displayMetrics.heightPixels && audioWidthDp >= 760f
+
         val audioCenterColumn =
             LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(ui.dp(32), ui.dp(20), ui.dp(32), ui.dp(24))
+                gravity = Gravity.CENTER
+                val horizontalInset = if (wideAudioLayout) ui.dp(56) else ui.dp(32)
+                setPadding(horizontalInset, ui.dp(20), horizontalInset, ui.dp(24))
             }
 
         // Audio Header
         val audioHeader =
             LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
+                gravity =
+                    if (wideAudioLayout) Gravity.CENTER_VERTICAL or Gravity.LEFT else Gravity.CENTER
             }
         audioProviderIcon = ServiceMarkView(context, "", accentColor)
         audioHeader.addView(
@@ -468,7 +501,17 @@ class TvPlayerChromeView(
                 setTextColor(accentColor)
             }
         audioHeader.addView(audioProviderTitle, LinearLayout.LayoutParams(-2, -2))
-        audioCenterColumn.addView(audioHeader)
+        audioCenterColumn.addView(audioHeader, LinearLayout.LayoutParams(-1, -2))
+
+        val audioBodyRow =
+            LinearLayout(context).apply {
+                orientation =
+                    if (wideAudioLayout) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+                gravity =
+                    if (wideAudioLayout) Gravity.CENTER_VERTICAL else Gravity.CENTER_HORIZONTAL
+                if (wideAudioLayout) setPadding(0, ui.dp(18), 0, 0)
+            }
+        audioCenterColumn.addView(audioBodyRow, LinearLayout.LayoutParams(-1, -2))
 
         // Album Art Box (large square)
         audioArtContainer =
@@ -483,37 +526,58 @@ class TvPlayerChromeView(
             audioArtFallback,
             FrameLayout.LayoutParams(ui.dp(72), ui.dp(72), Gravity.CENTER),
         )
-        audioCenterColumn.addView(
-            audioArtContainer,
-            LinearLayout.LayoutParams(ui.dp(210), ui.dp(210)).apply {
-                topMargin = ui.dp(16)
-                bottomMargin = ui.dp(16)
-            },
-        )
+        audioArtView.onImageAvailabilityChanged = { available ->
+            audioArtFallback.visibility = if (available) GONE else VISIBLE
+        }
+        audioArtView.onBitmapChanged = { bitmap ->
+            audioArtworkColor = bitmap?.let(::artworkThemeColor)
+            if (isAudioMode) updateAudioTheme()
+        }
+        val artworkSize = if (wideAudioLayout) ui.dp(320) else ui.dp(210)
+        val artworkLayoutParams =
+            LinearLayout.LayoutParams(artworkSize, artworkSize).apply {
+                if (wideAudioLayout) {
+                    rightMargin = ui.dp(40)
+                } else {
+                    topMargin = ui.dp(16)
+                    bottomMargin = ui.dp(16)
+                }
+            }
+        audioBodyRow.addView(audioArtContainer, artworkLayoutParams)
+
+        val audioDetailsColumn =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+        val audioDetailsLayoutParams =
+            if (wideAudioLayout) LinearLayout.LayoutParams(0, -2, 1f)
+            else LinearLayout.LayoutParams(-1, -2)
+        audioBodyRow.addView(audioDetailsColumn, audioDetailsLayoutParams)
 
         // Metadata
         audioTitleText =
             TextView(context).apply {
-                textSize = 22f
+                textSize = if (wideAudioLayout) 30f else 22f
                 typeface = TvTypography.semibold(context)
                 setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                maxLines = 2
+                gravity = if (wideAudioLayout) Gravity.LEFT else Gravity.CENTER
+                maxLines = if (wideAudioLayout) 1 else 2
                 ellipsize = TextUtils.TruncateAt.END
             }
-        audioCenterColumn.addView(audioTitleText, LinearLayout.LayoutParams(-1, -2))
+        audioDetailsColumn.addView(audioTitleText, LinearLayout.LayoutParams(-1, -2))
 
         audioSubtitleText =
             TextView(context).apply {
-                textSize = 15f
+                textSize = if (wideAudioLayout) 18f else 15f
                 typeface = TvTypography.regular(context)
                 setTextColor(ui.muted)
-                gravity = Gravity.CENTER
+                gravity = if (wideAudioLayout) Gravity.LEFT else Gravity.CENTER
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
-                setPadding(0, ui.dp(4), 0, ui.dp(12))
+                setPadding(0, ui.dp(4), 0, if (wideAudioLayout) ui.dp(22) else ui.dp(12))
             }
-        audioCenterColumn.addView(audioSubtitleText, LinearLayout.LayoutParams(-1, -2))
+        audioDetailsColumn.addView(audioSubtitleText, LinearLayout.LayoutParams(-1, -2))
 
         // Audio Timeline
         val audioTimeline =
@@ -548,9 +612,9 @@ class TvPlayerChromeView(
                 setTextColor(ui.muted)
             }
         audioTimeline.addView(audioDurationText, LinearLayout.LayoutParams(-2, -2))
-        audioCenterColumn.addView(
+        audioDetailsColumn.addView(
             audioTimeline,
-            LinearLayout.LayoutParams(ui.dp(440), -2).apply { bottomMargin = ui.dp(16) },
+            LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(18) },
         )
 
         // Audio Large Primary Controls
@@ -616,7 +680,7 @@ class TvPlayerChromeView(
             }
         audioPrimaryControlsRow.addView(audioNextButton)
 
-        audioCenterColumn.addView(audioPrimaryControlsRow)
+        audioDetailsColumn.addView(audioPrimaryControlsRow)
 
         // Audio Secondary Controls
         audioSecondaryControlsRow =
@@ -648,6 +712,17 @@ class TvPlayerChromeView(
             }
         audioSecondaryControlsRow.addView(audioSubtitlesButton)
 
+        audioQualityButton =
+            createButton(
+                TvPlayerSymbol.QUALITY,
+                R.string.quality,
+                "player:audio_quality",
+                sizeDp = 38,
+            ) {
+                actions.quality()
+            }
+        audioSecondaryControlsRow.addView(audioQualityButton)
+
         audioMinimizeButton =
             createButton(
                 TvPlayerSymbol.MINIMIZE,
@@ -676,7 +751,7 @@ class TvPlayerChromeView(
             }
         audioSecondaryControlsRow.addView(audioStopButton)
 
-        audioCenterColumn.addView(audioSecondaryControlsRow)
+        audioDetailsColumn.addView(audioSecondaryControlsRow)
 
         audioOverlay.addView(audioCenterColumn, LayoutParams(-1, -2, Gravity.CENTER))
     }
@@ -697,7 +772,7 @@ class TvPlayerChromeView(
             isFocusable = true
             isClickable = true
             scaleType = ImageView.ScaleType.CENTER_INSIDE
-            val pad = if (circular) ui.dp(14) else ui.dp(10)
+            val pad = if (circular) ui.dp(9) else ui.dp(5)
             setPadding(pad, pad, pad, pad)
             setBackgroundDrawable(controlBackground(accentColor, circular))
             setOnClickListener { click() }
@@ -874,12 +949,7 @@ class TvPlayerChromeView(
             isChromeVisible = true
             videoOverlay.visibility = GONE
             audioOverlay.visibility = VISIBLE
-            audioOverlay.setBackgroundDrawable(
-                GradientDrawable(
-                    GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(mixColors(ui.panel, accent, 0.28f), Color.rgb(10, 15, 16)),
-                )
-            )
+            updateAudioTheme()
 
             audioProviderIcon.bind(provider, accent)
             audioProviderTitle.text = ui.serviceTitle(provider)
@@ -892,11 +962,13 @@ class TvPlayerChromeView(
 
             if (!item?.imageUrl.isNullOrEmpty()) {
                 audioArtView.visibility = VISIBLE
-                audioArtFallback.visibility = GONE
-                audioArtView.bind(artwork, item.imageUrl)
+                audioArtView.bind(artwork, item.imageUrl, ArtworkRequestRole.AUDIO)
             } else {
+                audioArtView.bind(artwork, "", ArtworkRequestRole.AUDIO)
                 audioArtView.visibility = GONE
                 audioArtFallback.visibility = VISIBLE
+                audioArtworkColor = null
+                updateAudioTheme()
             }
 
             audioPrevButton.visibility = if (canPrevious) VISIBLE else GONE
@@ -904,6 +976,12 @@ class TvPlayerChromeView(
             audioNextButton.isEnabled = canNext
             audioSeekBackButton.isEnabled = seekable
             audioSeekForwardButton.isEnabled = seekable
+            // AirPlay live audio has track navigation but no seekable local
+            // timeline. Keep unavailable ten-second controls out of D-pad focus.
+            val showAudioSeek = seekable || provider != "airplay"
+            audioSeekBackButton.visibility = if (showAudioSeek) VISIBLE else GONE
+            audioSeekForwardButton.visibility = if (showAudioSeek) VISIBLE else GONE
+            audioQualityButton.visibility = if (provider == "airplay") VISIBLE else GONE
         } else {
             audioOverlay.visibility = GONE
             videoOverlay.visibility = VISIBLE
@@ -1078,6 +1156,48 @@ class TvPlayerChromeView(
         }
     }
 
+    private fun updateAudioTheme() {
+        val theme = audioArtworkColor ?: accentColor
+        val dark = Color.rgb(10, 15, 16)
+        audioOverlay.setBackgroundDrawable(
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(
+                    mixColors(dark, theme, 0.82f),
+                    mixColors(dark, theme, 0.54f),
+                    mixColors(dark, theme, 0.13f),
+                ),
+            )
+        )
+        audioArtContainer.setBackgroundDrawable(
+            ui.box(Color.rgb(18, 24, 26), mixColors(Color.WHITE, theme, 0.35f))
+        )
+    }
+
+    /** Selects a stable album-art hue without giving nearly black pixels control of the screen. */
+    private fun artworkThemeColor(bitmap: Bitmap): Int? {
+        if (bitmap.width <= 0 || bitmap.height <= 0) return null
+        val weights = FloatArray(12)
+        val hueSums = FloatArray(12)
+        val hsv = FloatArray(3)
+        for (row in 0 until 8) {
+            val y = ((row * 2 + 1) * bitmap.height / 16).coerceAtMost(bitmap.height - 1)
+            for (column in 0 until 8) {
+                val x = ((column * 2 + 1) * bitmap.width / 16).coerceAtMost(bitmap.width - 1)
+                Color.colorToHSV(bitmap.getPixel(x, y), hsv)
+                if (hsv[1] < 0.22f || hsv[2] < 0.16f) continue
+                val bin = (hsv[0] / 30f).toInt().coerceIn(0, 11)
+                val weight = hsv[1] * hsv[2]
+                weights[bin] += weight
+                hueSums[bin] += hsv[0] * weight
+            }
+        }
+        val dominant = weights.indices.maxByOrNull { weights[it] } ?: return null
+        if (weights[dominant] < 1f) return null
+        val hue = hueSums[dominant] / weights[dominant]
+        return Color.HSVToColor(floatArrayOf(hue, 0.78f, 0.72f))
+    }
+
     private fun refreshButtonStyles() {
         videoSeekBackButton.setBackgroundDrawable(controlBackground(accentColor))
         videoPrevButton.setBackgroundDrawable(controlBackground(accentColor))
@@ -1101,6 +1221,7 @@ class TvPlayerChromeView(
         audioNextButton.setBackgroundDrawable(controlBackground(accentColor))
         audioAudioTracksButton.setBackgroundDrawable(controlBackground(accentColor))
         audioSubtitlesButton.setBackgroundDrawable(controlBackground(accentColor))
+        audioQualityButton.setBackgroundDrawable(controlBackground(accentColor))
         audioMinimizeButton.setBackgroundDrawable(controlBackground(accentColor))
         audioExternalButton.setBackgroundDrawable(controlBackground(accentColor))
         audioStopButton.setBackgroundDrawable(controlBackground(accentColor))

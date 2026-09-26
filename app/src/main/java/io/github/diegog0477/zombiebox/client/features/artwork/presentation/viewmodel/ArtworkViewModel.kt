@@ -1,6 +1,7 @@
 package io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel
 
 import io.github.diegog0477.zombiebox.client.features.artwork.domain.repository.ArtworkRepository
+import io.github.diegog0477.zombiebox.client.features.artwork.domain.repository.ArtworkRequestRole
 
 /** Bounded in-flight work and a four MiB encoded-image LRU; views own decoded bitmaps. */
 class ArtworkViewModel(
@@ -28,9 +29,9 @@ class ArtworkViewModel(
         }
     }
 
-    fun load(path: String, hero: Boolean, display: (ByteArray) -> Unit) {
+    fun load(path: String, role: ArtworkRequestRole, display: (ByteArray?) -> Unit) {
         if (closed || path.isEmpty()) return
-        val key = "$hero:$path"
+        val key = "$role:$path"
         cache.remove(key)?.let { cached ->
             if (now() < cached.expires) {
                 cache[key] = cached
@@ -45,7 +46,7 @@ class ArtworkViewModel(
         execute {
             val bytes =
                 try {
-                    repository.image(path, hero)
+                    repository.image(path, role)
                 } catch (_: Exception) {
                     null
                 }
@@ -62,11 +63,15 @@ class ArtworkViewModel(
                             cache[key] = Cached(bytes, now() + 5 * 60 * 1000L)
                             cacheBytes += bytes.size
                         }
-                        display(bytes)
                     }
+                    display(bytes)
                 }
             }
         }
+    }
+
+    fun load(path: String, hero: Boolean, display: (ByteArray?) -> Unit) {
+        load(path, if (hero) ArtworkRequestRole.HERO else ArtworkRequestRole.DEFAULT, display)
     }
 
     fun close() {

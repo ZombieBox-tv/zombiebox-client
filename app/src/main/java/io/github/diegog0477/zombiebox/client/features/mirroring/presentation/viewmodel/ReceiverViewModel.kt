@@ -1,11 +1,65 @@
 package io.github.diegog0477.zombiebox.client.features.mirroring.presentation.viewmodel
 
+import io.github.diegog0477.zombiebox.client.core.model.MediaItem
 import io.github.diegog0477.zombiebox.client.core.presentation.ScreenTasks
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.PlaybackContext
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.ReceiverChange
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.model.ReceiverPlan
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.repository.ReceiverClaimConflict
 import io.github.diegog0477.zombiebox.client.features.mirroring.domain.repository.ReceiverRepository
+
+/** Presentation rules for keeping a live receiver's local playback view stable. */
+object ReceiverPlaybackPolicy {
+    /** Temporary local-audio restart guard; reliable sender position takes precedence. */
+    const val RESUME_PROGRESS_GRACE_MS = 10_000L
+
+    private val audioReceiverProviders = setOf("airplay", "spotify")
+
+    fun preserveFullscreenForAudioChange(current: PlaybackContext, next: ReceiverPlan): Boolean {
+        val currentItem = current.item ?: return false
+        val nextItem = next.item ?: return false
+        return current.fullscreen &&
+            current.incomingReceiverSessionId.isNotEmpty() &&
+            currentItem.kind == "audio" &&
+            currentItem.provider in audioReceiverProviders &&
+            nextItem.kind == "audio" &&
+            nextItem.provider == currentItem.provider
+    }
+
+    fun positionForIncomingAudio(
+        playbackSessionId: String,
+        incomingReceiverSessionId: String,
+        previousPositionSessionId: String,
+        item: MediaItem?,
+        previousPositionMs: Int,
+        reportedPositionMs: Int,
+        holdBackwardCorrection: Boolean,
+        senderPositionKnown: Boolean = false,
+    ): Int {
+        val sameIncomingAudioSession =
+            playbackSessionId.isNotEmpty() &&
+                playbackSessionId == incomingReceiverSessionId &&
+                playbackSessionId == previousPositionSessionId &&
+                item?.kind == "audio" &&
+                item.provider in audioReceiverProviders
+        return if (senderPositionKnown) {
+            reportedPositionMs.coerceAtLeast(0)
+        } else if (sameIncomingAudioSession && holdBackwardCorrection) {
+            maxOf(previousPositionMs, reportedPositionMs).coerceAtLeast(0)
+        } else {
+            reportedPositionMs.coerceAtLeast(0)
+        }
+    }
+}
+
+/** Shorter control/metadata polling is limited to active incoming AirPlay audio. */
+object ReceiverPollingPolicy {
+    const val DEFAULT_INTERVAL_MS = 3_000L
+    const val ACTIVE_AIRPLAY_AUDIO_INTERVAL_MS = 750L
+
+    fun intervalMs(activeIncomingAirPlayAudio: Boolean): Long =
+        if (activeIncomingAirPlayAudio) ACTIVE_AIRPLAY_AUDIO_INTERVAL_MS else DEFAULT_INTERVAL_MS
+}
 
 /** One foreground poll at a time; network errors preserve the last confirmed session. */
 class ReceiverViewModel(
@@ -32,6 +86,9 @@ class ReceiverViewModel(
 
     fun command(action: String, failed: (Exception) -> Unit) =
         settingsTasks.run({ repository.command(action) }, { refresh() }, failed)
+
+    fun airplayCommand(action: String, failed: (Exception) -> Unit) =
+        settingsTasks.run({ repository.airplayCommand(action) }, { refresh() }, failed)
 
     fun readHandoff(done: (Boolean) -> Unit, failed: (Exception) -> Unit) =
         settingsTasks.run({ repository.handoffEnabled() }, done, failed)
@@ -98,16 +155,23 @@ class ReceiverViewModel(
 
     private var lastPlan: ReceiverPlan? = null
     private var interrupted: PlaybackContext? = null
+    private var retiredIncomingSession = ""
 
     fun transition(plan: ReceiverPlan?, current: PlaybackContext): ReceiverChange? {
         if (plan == null) {
-            if (activeSession.isEmpty()) return null
+            if (activeSession.isEmpty()) {
+                val staleSession = current.incomingReceiverSessionId
+                if (staleSession.isEmpty() || staleSession == retiredIncomingSession) return null
+                retiredIncomingSession = staleSession
+                return ReceiverChange.Restore(null)
+            }
             val previous = interrupted
             activeSession = ""
             lastPlan = null
             interrupted = null
             return ReceiverChange.Restore(previous)
         }
+        retiredIncomingSession = ""
         if (plan.sessionId == dismissed || plan.sessionId == completed) return null
         if (plan.sessionId == activeSession) {
             if (playbackFailed && plan.state == "PLAYING" && attempts < 3 && clock() >= retryAt) {
@@ -213,6 +277,7 @@ class ReceiverViewModel(
         dismissed = ""
         completed = ""
         lastPlan = null
+        retiredIncomingSession = ""
     }
 
     fun close() {

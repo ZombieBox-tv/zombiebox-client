@@ -8,6 +8,7 @@ import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.*
 import io.github.diegog0477.zombiebox.client.R
 import io.github.diegog0477.zombiebox.client.core.model.MediaItem
@@ -16,11 +17,13 @@ import io.github.diegog0477.zombiebox.client.core.ui.TvWidgets
 import io.github.diegog0477.zombiebox.client.core.ui.WindowedRow
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.ui.ArtworkImageView
 import io.github.diegog0477.zombiebox.client.features.artwork.presentation.viewmodel.ArtworkViewModel
+import io.github.diegog0477.zombiebox.client.features.catalog.domain.model.CatalogPage
 import io.github.diegog0477.zombiebox.client.features.catalog.presentation.ui.CatalogUiPolicy
 import io.github.diegog0477.zombiebox.client.features.diagnostics.platform.HardwareMemory
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeBudget
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeScope
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeSnapshot
+import io.github.diegog0477.zombiebox.client.features.home.domain.model.YouTubeActivityPage
 
 data class HomeActions(
     val navigate: (String, String) -> Unit,
@@ -45,6 +48,14 @@ data class HomeActions(
     val spotifyAuthorize: () -> Unit = {},
     val spotifyReceive: () -> Unit = {},
     val airplayReceive: () -> Unit = {},
+    val loadYouTubePage: (Int, (CatalogPage?, Exception?) -> Unit) -> Unit = { _, done ->
+        done(null, null)
+    },
+    val loadYouTubeActivityPage: (String, (YouTubeActivityPage?, Exception?) -> Unit) -> Unit =
+        { _, done ->
+            done(null, null)
+        },
+    val refreshHomeFocus: (Boolean) -> Unit = {},
 )
 
 /** Home composition and D-pad focus. Receives semantic content and user-action callbacks. */
@@ -73,10 +84,27 @@ class HomeView(
     private var compactTransport: CompactTransportBar? = null
     private var rightRailContainer: FrameLayout? = null
     private var spotifyPageView: SpotifyPageView? = null
+    private var youtubePageView: YouTubePageView? = null
     private var rememberedMainFocus: String? = null
     private var currentPlayback: HomePlaybackSession = HomePlaybackSession()
     private var isDockedLandscape: Boolean = false
     private var isFullscreen: Boolean = false
+    private val youtubeAutoPageFocusListener =
+        ViewTreeObserver.OnGlobalFocusChangeListener { _, focused ->
+            youtubePageView?.onFocusChanged(focused)
+        }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        viewTreeObserver.addOnGlobalFocusChangeListener(youtubeAutoPageFocusListener)
+    }
+
+    override fun onDetachedFromWindow() {
+        if (viewTreeObserver.isAlive) {
+            viewTreeObserver.removeOnGlobalFocusChangeListener(youtubeAutoPageFocusListener)
+        }
+        super.onDetachedFromWindow()
+    }
 
     fun isRightRailActive(): Boolean =
         isDockedLandscape && currentPlayback.active && nowPlayingRail != null
@@ -162,7 +190,7 @@ class HomeView(
                     focusRows.add(Pair("spotify:playback", it))
                 }
             }
-            focus.rebuild(focusRows + playbackFocusRows(playback), !isFullscreen)
+            rebuildFocus(!isFullscreen)
         }
     }
 
@@ -243,6 +271,7 @@ class HomeView(
         compactTransport = null
         rightRailContainer = null
         spotifyPageView = null
+        youtubePageView = null
         removeAllViews()
 
         val widthDp = resources.displayMetrics.widthPixels / resources.displayMetrics.density
@@ -373,14 +402,16 @@ class HomeView(
 
         when (scope.provider) {
             "youtube" -> {
-                YouTubePageView(context, ui, artwork, decoder, actions)
-                    .render(
-                        parent = mainColumn,
-                        snapshot = snapshot,
-                        isDockedLandscape = isDockedLandscape,
-                        widthDp = widthDp,
-                        focusRows = focusRows,
-                    )
+                val page = YouTubePageView(context, ui, artwork, decoder, actions)
+                youtubePageView = page
+                page.render(
+                    parent = mainColumn,
+                    snapshot = snapshot,
+                    isHomeFeed = scope.query.isBlank(),
+                    isDockedLandscape = isDockedLandscape,
+                    widthDp = widthDp,
+                    focusRows = focusRows,
+                )
             }
             "plex",
             "stremio",
@@ -435,7 +466,16 @@ class HomeView(
             )
         )
 
-        focus.rebuild(focusRows + playbackFocusRows(playback), !full)
+        rebuildFocus(!full)
+    }
+
+    fun rebuildFocus(restore: Boolean = false) {
+        focus.rebuild(focusRows + playbackFocusRows(currentPlayback), restore && !isFullscreen)
+        if (scope.provider == "youtube") {
+            findViewWithTag<View>("youtube:load-more")?.setOnFocusChangeListener { view, focused ->
+                if (focused) view.performClick()
+            }
+        }
     }
 
     private fun playbackFocusRows(playback: HomePlaybackSession): List<Pair<String, ViewGroup>> =

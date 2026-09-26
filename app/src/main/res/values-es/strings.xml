@@ -64,6 +64,11 @@
     <string name="expand">Ampliar</string>
     <string name="more_info">Más información</string>
     <string name="quality">Calidad</string>
+    <string name="airplay_quality_title">Ruta de audio AirPlay</string>
+    <string name="airplay_quality_summary">
+        Fuente de Apple: sin medir\nPuente: AAC (objetivo de 128 kb/s)\nSalida de TV: PCM 44,1
+        kHz, 16 bits, estéreo\nEsta sesión no ofrece otra tasa de bits.
+    </string>
     <string name="quality_auto">Automática</string>
     <string name="quality_manual_unavailable">
         La calidad manual no está disponible para este video en este dispositivo. Ejecuta las
@@ -676,4 +681,12 @@
     <string name="devices_mirror_detail">
         Recibe la pantalla compartida de un móvil o computadora.
     </string>
+    <string name="youtube_home_feed">Inicio de YouTube</string>
+    <string name="youtube_activity_feed">Tu actividad de YouTube en ZombieBox</string>
+    <string name="youtube_more_videos">Más videos</string>
+    <string name="youtube_quality_restarts_from_beginning">
+        Este dispositivo reinicia el video desde 0:00 al cambiar a esta calidad.
+    </string>
+    <string name="youtube_loading_more">Cargando videos…</string>
+    <string name="youtube_retry_feed">Reintentar carga de videos</string>
 </resources>

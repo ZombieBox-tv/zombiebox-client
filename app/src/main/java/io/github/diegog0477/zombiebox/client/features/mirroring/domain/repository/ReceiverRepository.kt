@@ -16,6 +16,11 @@ interface ReceiverRepository {
 
     fun command(action: String)
 
+    /** Sends one track action to the active AirPlay sender, when available. */
+    fun airplayCommand(action: String) {
+        throw UnsupportedOperationException("AirPlay controls unavailable")
+    }
+
     fun active(): ReceiverPlan?
 
     fun stop(sessionId: String)

@@ -5,6 +5,7 @@ import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeScop
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.HomeSnapshot
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.MediaSection
 import io.github.diegog0477.zombiebox.client.features.home.domain.model.ServiceModule
+import io.github.diegog0477.zombiebox.client.features.home.domain.model.YouTubeActivityPage
 import io.github.diegog0477.zombiebox.client.features.home.domain.repository.HomeRepository
 import io.github.diegog0477.zombiebox.shared.GatewayApi
 import java.net.URLEncoder
@@ -52,7 +53,32 @@ class GatewayHomeRepository(private val api: GatewayApi) : HomeRepository {
                 )
             },
             scopedModules,
+            home.optInt("nextOffset", -1).takeIf { scope.provider == "youtube" } ?: -1,
+            home.optString("feedType") == "zombiebox_activity",
+            home.optString("nextCursor"),
         )
+    }
+
+    override fun loadYouTubeActivityPage(cursor: String): YouTubeActivityPage {
+        require(cursor.isNotBlank() && cursor.length <= 512)
+        val page =
+            api.request(
+                "GET",
+                "/v1/home?provider=youtube&activityCursor=" + URLEncoder.encode(cursor, "UTF-8"),
+            )
+        val sections = page.optJSONArray("sections") ?: JSONArray()
+        val items =
+            (0 until sections.length())
+                .asSequence()
+                .mapNotNull { sections.optJSONObject(it) }
+                .filter { it.optString("id") == "youtube-activity" }
+                .flatMap { section ->
+                    val videos = section.optJSONArray("items") ?: JSONArray()
+                    (0 until videos.length()).mapNotNull { videos.optJSONObject(it) }
+                }
+                .map(MediaItemDecoder::decodeItem)
+                .toList()
+        return YouTubeActivityPage(items, page.optString("nextCursor"))
     }
 
     private fun spotifyIntegration(): ServiceModule? =

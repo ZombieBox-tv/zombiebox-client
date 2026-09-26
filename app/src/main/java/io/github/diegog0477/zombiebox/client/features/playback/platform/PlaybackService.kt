@@ -27,6 +27,35 @@ import io.github.diegog0477.zombiebox.client.features.youtubereceiver.presentati
 import io.github.diegog0477.zombiebox.shared.GatewayApi
 import java.util.concurrent.Executors
 
+/** Keeps AirPlay controls tied to the receiver's last reported state. */
+internal object IncomingAirPlayControlPolicy {
+    private val controllableStates = setOf("PLAYING", "PAUSED")
+
+    fun isIncomingAirPlay(session: PlaybackSession): Boolean =
+        session.incoming && session.item?.provider == "airplay"
+
+    fun actionFor(remoteState: String, command: String): String? {
+        if (remoteState !in controllableStates) return null
+        return when (command) {
+            "toggle" -> "playpause"
+            "pause" -> if (remoteState == "PLAYING") "playpause" else null
+            "play" -> if (remoteState == "PAUSED") "playpause" else null
+            else -> null
+        }
+    }
+
+    fun systemPlayback(session: PlaybackSession, remoteState: String): SystemPlayback? {
+        if (!isIncomingAirPlay(session) || remoteState !in controllableStates) return null
+        val authoritative =
+            session.copy(
+                incoming = false,
+                loading = false,
+                progress = session.progress.copy(state = remoteState),
+            )
+        return SystemPlayback.from(authoritative)
+    }
+}
+
 /** Started while visible, then foreground for the lifetime of a playback session. */
 class PlaybackService : Service() {
     inner class Access : Binder() {
@@ -329,6 +358,7 @@ class PlaybackService : Service() {
                 autoplay = model.state.progress.state != "PAUSED",
                 video = item.kind != "audio",
                 seekable = plan.seekable && !plan.live,
+                mime = plan.mime,
             )
         else model.mediaState("FAILED", plan.resumePositionMs, 0)
     }
@@ -349,6 +379,7 @@ class PlaybackService : Service() {
     }
 
     fun toggle() {
+        if (airplayCommand("toggle")) return
         if (model.setRecoveryPaused(model.state.progress.state != "PAUSED")) return
         if (model.state.incoming && model.state.item?.provider == "spotify") {
             val action = if (receiverPlaybackState == "PAUSED") "resume" else "pause"
@@ -361,10 +392,27 @@ class PlaybackService : Service() {
     }
 
     private fun systemState(state: PlaybackSession) =
-        SystemPlayback.from(
-            state,
-            state.incoming && state.item?.provider == "spotify" && receiverPlaybackState == "PAUSED",
-        )
+        IncomingAirPlayControlPolicy.systemPlayback(state, receiverPlaybackState)
+            ?: SystemPlayback.from(
+                state,
+                state.incoming &&
+                    state.item?.provider == "spotify" &&
+                    receiverPlaybackState == "PAUSED",
+            )
+
+    /** Returns true whenever this is an AirPlay session, including when state is unknown. */
+    private fun airplayCommand(command: String): Boolean {
+        if (!IncomingAirPlayControlPolicy.isIncomingAirPlay(model.state)) return false
+        val action = IncomingAirPlayControlPolicy.actionFor(receiverPlaybackState, command)
+        if (action != null) {
+            worker.execute {
+                try {
+                    GatewayReceiverRepository(api).airplayCommand(action)
+                } catch (_: Exception) {}
+            }
+        }
+        return true
+    }
 
     private fun stopFromControls() {
         if (model.state.incoming)
@@ -387,6 +435,7 @@ class PlaybackService : Service() {
             "seek" -> SystemPlayback.localSeek(model.state, position)?.let { player.seekTo(it) }
             "play",
             "pause" -> {
+                if (airplayCommand(command)) return
                 val paused = command == "pause"
                 if (model.state.incoming && model.state.item?.provider == "spotify") {
                     worker.execute {

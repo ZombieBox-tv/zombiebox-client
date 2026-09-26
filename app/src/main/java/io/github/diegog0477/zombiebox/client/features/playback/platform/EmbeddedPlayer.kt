@@ -17,7 +17,9 @@ class EmbeddedPlayer(
     private val handler = Handler(thread.looper)
     private val main = Handler(Looper.getMainLooper())
     private val intent = PlaybackIntent()
+    private val pcm = PcmStreamPlayer()
     private var player: MediaPlayer? = null
+    private var pcmActive = false
     private var output: PlayerSurface? = null
     private var prepared = false
     private var seekable = true
@@ -103,17 +105,37 @@ class EmbeddedPlayer(
         autoplay: Boolean = true,
         video: Boolean = true,
         seekable: Boolean = true,
+        mime: String = "",
     ) {
         if (closed) return
         val request = ++epoch
+        val pcmStream = PcmStreamPolicy.supportsMime(mime)
         handler.post {
             if (closed || request != epoch) return@post
             dispose()
             activeEpoch = request
             this.position = position.coerceAtLeast(0)
             duration = 0
-            this.seekable = seekable
-            intent.begin(autoplay, video)
+            this.seekable = seekable && !pcmStream
+            pcmActive = pcmStream
+            intent.begin(autoplay, video && !pcmStream)
+            if (pcmStream) {
+                state = if (intent.canPlay) "BUFFERING" else "PAUSED"
+                report()
+                pcm.play(url, this.position, intent.canPlay) { status, progress, length ->
+                    handler.post {
+                        if (!closed && request == epoch && request == activeEpoch && pcmActive) {
+                            state = status
+                            this.position = progress.coerceAtLeast(0)
+                            duration = length.coerceAtLeast(0)
+                            if (status == "FAILED" || status == "ENDED" || status == "STOPPED")
+                                pcmActive = false
+                            report()
+                        }
+                    }
+                }
+                return@post
+            }
             state = "BUFFERING"
             report()
             try {
@@ -205,6 +227,15 @@ class EmbeddedPlayer(
     }
 
     private fun applyIntent() {
+        if (pcmActive) {
+            if (state == "ENDED" || state == "FAILED") return
+            if (intent.canPlay) {
+                if (state == "PAUSED") pcm.resume()
+            } else if (state != "PAUSED") {
+                pcm.pause()
+            }
+            return
+        }
         if (!prepared || state == "ENDED") return
         val media = player ?: return
         if (intent.canPlay && !seeking) {
@@ -289,8 +320,11 @@ class EmbeddedPlayer(
             val success =
                 try {
                     volumeGain = if (muted) 0f else level.coerceIn(0, 100) / 100f
-                    player?.setVolume(volumeGain, volumeGain)
-                    player != null
+                    if (pcmActive) pcm.volume(level, muted)
+                    else {
+                        player?.setVolume(volumeGain, volumeGain)
+                        player != null
+                    }
                 } catch (_: Exception) {
                     false
                 }
@@ -329,6 +363,8 @@ class EmbeddedPlayer(
         prepared = false
         seeking = false
         buffering = false
+        pcmActive = false
+        pcm.stop()
         val old = player
         player = null
         try {
@@ -344,6 +380,7 @@ class EmbeddedPlayer(
             dispose()
             output?.release()
             output = null
+            pcm.close()
             thread.quit()
         }
     }

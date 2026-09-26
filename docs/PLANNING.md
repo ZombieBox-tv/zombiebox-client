@@ -1,5 +1,32 @@
 # zombiebox-client: component work
 
+## Unreleased signed dev.66 QA candidate
+
+The Vizio API 13 accepted the dev.66 release APK as an in-place signed update
+with data preserved. Its YouTube player displays scalable controls and a
+selected 720p stream advanced to 2:08 on gateway dev.103; ADB omits the video
+plane and cannot establish audible audio. Search and the bounded local watch
+activity feed render, while 1080p and repeated quality switching remain open.
+Artwork decoding selects WebP only where the platform supports it and keeps
+JPEG for API 13. AirPlay timeline, cover reuse, DACP controls, PCM AudioTrack
+fallback, fullscreen art color and receiver session changes pass JVM/build/
+lint checks but require a fresh iPad trial. IPTV live playback and Spotify
+Premium Connect remain physically open. No product gate closes.
+
+## Unreleased: signed dev.58 live PCM fallback
+
+The player can consume the gateway's exact audio-only PCM plan through a
+bounded API-9 AudioTrack stream after a fresh advancing output probe. Its
+single worker owns cancellation, progress and playback state; higher native
+audio paths remain preferred. The receiver also clears a retired incoming
+song after an authenticated empty session poll. A signed dev.58 update was
+installed on the selected Vizio API 13 without removing its data. The local
+AudioTrack probe advanced 2367 ms; H.264/AAC and finite MPEG-TS/AAC probes
+passed, while ADTS/HLS/chunked audio still failed MediaPlayer preparation.
+Build, lint, JVM tests, format and APK audit pass. A silent probe does not
+establish audible AirPlay playback or automatic receiver presentation. YouTube
+HD and Spotify Premium playback also remain open. No product milestone closes.
+
 ## dev.56 additive protocol pin
 
 Pin Protocol dev.44 for the bounded Cast ceiling schema. It adds no Client
