@@ -9,28 +9,24 @@ import org.json.JSONObject
 
 class GatewayQualityRepository(private val api: GatewayApi) : QualityRepository {
     override fun qualities(session: String): QualityInventory {
-        return try {
-            val value = api.request("GET", "/v1/playback/$session/qualities")
-            val selectedId = value.optString("selectedId", "auto")
-            val optionsArray = value.optJSONArray("options")
-            val options =
-                if (optionsArray != null && optionsArray.length() > 0) {
-                    (0 until optionsArray.length()).map { i ->
-                        val obj = optionsArray.getJSONObject(i)
-                        QualityOption(
-                            id = obj.getString("id"),
-                            label = obj.optString("label", obj.getString("id")),
-                            width = obj.optInt("width", 0),
-                            height = obj.optInt("height", 0),
-                        )
-                    }
-                } else {
-                    listOf(QualityOption("auto", "Auto"))
+        val value = api.request("GET", "/v1/playback/$session/qualities")
+        val selectedId = value.optString("selectedId", "auto")
+        val optionsArray = value.optJSONArray("options")
+        val options =
+            if (optionsArray != null && optionsArray.length() > 0) {
+                (0 until optionsArray.length()).map { i ->
+                    val obj = optionsArray.getJSONObject(i)
+                    QualityOption(
+                        id = obj.getString("id"),
+                        label = obj.optString("label", obj.getString("id")),
+                        width = obj.optInt("width", 0),
+                        height = obj.optInt("height", 0),
+                    )
                 }
-            QualityInventory(selectedId, options)
-        } catch (_: Exception) {
-            QualityInventory("auto", listOf(QualityOption("auto", "Auto")))
-        }
+            } else {
+                listOf(QualityOption("auto", "Auto"))
+            }
+        return QualityInventory(selectedId, options)
     }
 
     override fun select(session: String, qualityId: String, positionMs: Int): PlaybackPlan {
