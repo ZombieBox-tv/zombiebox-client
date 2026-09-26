@@ -10,6 +10,7 @@ data class PlaybackPlan(
     val live: Boolean = false,
     val seekable: Boolean = true,
     val subtitleId: Int? = null,
+    val prepareBeforePlayback: Boolean = false,
 )
 
 data class PlaybackProgress(val state: String, val positionMs: Int, val durationMs: Int)

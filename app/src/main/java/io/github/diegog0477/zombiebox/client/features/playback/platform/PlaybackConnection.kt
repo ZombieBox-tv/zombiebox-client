@@ -149,15 +149,19 @@ class PlaybackConnection(
     ) = command {
         val plan = it.model.state.plan
         if (plan?.url != url) return@command
-        if (it.focus.acquire()) it.player.play(url, position, autoplay, video, seekable, plan.mime)
-        else it.model.mediaState("FAILED", position, 0)
+        it.playCurrentPlan(url, position, autoplay, video, seekable)
     }
 
     fun resume() = command {
-        if (!it.model.setRecoveryPaused(false) && it.focus.acquire()) it.player.resume()
+        if (!it.model.setRecoveryPaused(false) && it.focus.acquire()) {
+            if (!it.setPendingPlaybackPaused(false)) it.player.resume()
+        }
     }
 
-    fun pause() = command { if (!it.model.setRecoveryPaused(true)) it.player.pause() }
+    fun pause() = command {
+        if (!it.model.setRecoveryPaused(true) && !it.setPendingPlaybackPaused(true))
+            it.player.pause()
+    }
 
     fun toggle() = command { it.toggle() }
 

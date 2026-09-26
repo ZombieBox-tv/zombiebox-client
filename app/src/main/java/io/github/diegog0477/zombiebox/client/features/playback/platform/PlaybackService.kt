@@ -13,8 +13,13 @@ import io.github.diegog0477.zombiebox.client.core.model.MediaItem
 import io.github.diegog0477.zombiebox.client.features.catalog.data.GatewayCatalogRepository
 import io.github.diegog0477.zombiebox.client.features.mirroring.data.GatewayReceiverRepository
 import io.github.diegog0477.zombiebox.client.features.mirroring.presentation.viewmodel.BackgroundReceptionViewModel
+import io.github.diegog0477.zombiebox.client.features.playback.data.GatewayPlaybackReadinessRepository
 import io.github.diegog0477.zombiebox.client.features.playback.data.GatewayPlaybackRepository
 import io.github.diegog0477.zombiebox.client.features.playback.data.LocalPlaybackResumeRepository
+import io.github.diegog0477.zombiebox.client.features.playback.data.PlaybackReadinessCancellation
+import io.github.diegog0477.zombiebox.client.features.playback.data.PlaybackReadinessDecision
+import io.github.diegog0477.zombiebox.client.features.playback.data.PlaybackReadinessPolicy
+import io.github.diegog0477.zombiebox.client.features.playback.data.PlaybackReadinessResult
 import io.github.diegog0477.zombiebox.client.features.playback.domain.model.*
 import io.github.diegog0477.zombiebox.client.features.playback.domain.policy.SystemControlCoordinator
 import io.github.diegog0477.zombiebox.client.features.playback.presentation.viewmodel.PlaybackSessionViewModel
@@ -25,7 +30,12 @@ import io.github.diegog0477.zombiebox.client.features.youtubereceiver.domain.rep
 import io.github.diegog0477.zombiebox.client.features.youtubereceiver.presentation.viewmodel.YouTubeReceiverViewModel
 import io.github.diegog0477.zombiebox.client.features.youtubereceiver.presentation.viewmodel.YouTubeReceptionViewModel
 import io.github.diegog0477.zombiebox.shared.GatewayApi
+import java.net.SocketTimeoutException
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.FutureTask
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /** Keeps AirPlay controls tied to the receiver's last reported state. */
 internal object IncomingAirPlayControlPolicy {
@@ -58,6 +68,17 @@ internal object IncomingAirPlayControlPolicy {
 
 /** Started while visible, then foreground for the lifetime of a playback session. */
 class PlaybackService : Service() {
+    private class PendingPreparation(
+        val plan: PlaybackPlan,
+        val positionMs: Int,
+        val video: Boolean,
+        val seekable: Boolean,
+        val cancellation: PlaybackReadinessCancellation,
+    ) {
+        @Volatile var autoplay: Boolean = true
+        @Volatile var task: FutureTask<Unit>? = null
+    }
+
     inner class Access : Binder() {
         val service
             get() = this@PlaybackService
@@ -66,6 +87,17 @@ class PlaybackService : Service() {
     private val handler = Handler()
     private val worker = Executors.newSingleThreadExecutor()
     private val api = GatewayApi()
+    private val readinessRepository = GatewayPlaybackReadinessRepository(api)
+    private val readinessExecutor =
+        ThreadPoolExecutor(
+            1,
+            1,
+            0L,
+            TimeUnit.MILLISECONDS,
+            ArrayBlockingQueue(1),
+            { task -> Thread(task, "zombie-playback-readiness") },
+        )
+    @Volatile private var pendingPreparation: PendingPreparation? = null
     lateinit var player: EmbeddedPlayer
         private set
 
@@ -118,7 +150,7 @@ class PlaybackService : Service() {
                 handler.postDelayed(this, 1000)
             }
         }
-    private var closed = false
+    @Volatile private var closed = false
     private lateinit var backgroundReception: BackgroundReceptionViewModel
     private var receiverPlaybackState = ""
     var visible = false
@@ -183,11 +215,13 @@ class PlaybackService : Service() {
                 object : YouTubePlaybackControl {
                     override fun play(plan: PlaybackPlan, item: MediaItem) = playPlan(plan, item)
 
-                    override fun pause() = player.pause()
+                    override fun pause() {
+                        if (!setPendingPlaybackPaused(true)) player.pause()
+                    }
 
                     override fun resume(): Boolean {
                         if (!focus.acquire()) return false
-                        player.resume()
+                        if (!setPendingPlaybackPaused(false)) player.resume()
                         return true
                     }
 
@@ -229,7 +263,10 @@ class PlaybackService : Service() {
         backgroundReception.observer = { updateNotification(model.state) }
         systemControls = SystemControlsFactory.create(this, ::systemCommand) { systemToken = it }
         model.play = ::playPlan
-        model.stopPlayer = { player.stop() }
+        model.stopPlayer = {
+            cancelPendingPreparation()
+            player.stop()
+        }
         model.observer = { state ->
             youtube.playbackState(
                 state.progress.state,
@@ -247,6 +284,7 @@ class PlaybackService : Service() {
     fun configure(base: String, device: String, token: String) {
         val nextProfile = Triple(base, device, token)
         if (profile != nextProfile) {
+            cancelPendingPreparation()
             // Revoke old authority before changing the serialized transport profile.
             backgroundReception.reset()
             youtube.disable()
@@ -288,7 +326,9 @@ class PlaybackService : Service() {
                 Build.VERSION.SDK_INT,
                 getSystemService(AUDIO_SERVICE) as AudioManager,
                 AudioManager.OnAudioFocusChangeListener {
-                    if (it <= 0 && !model.setRecoveryPaused(true)) player.pause()
+                    if (it <= 0 && !model.setRecoveryPaused(true)) {
+                        if (!setPendingPlaybackPaused(true)) player.pause()
+                    }
                 },
                 getSharedPreferences("zombie", MODE_PRIVATE)
                     .getBoolean("audioFocusCompatibility", false),
@@ -343,24 +383,187 @@ class PlaybackService : Service() {
         incoming: Boolean,
         paused: Boolean,
     ) {
+        cancelPendingPreparation()
         model.adopt(plan, item, queue, cursor, incoming, paused = paused)
     }
 
     private fun playPlan(plan: PlaybackPlan, item: MediaItem) {
+        preparePlanForPlayback(
+            plan,
+            model.state.progress.state != "PAUSED",
+            item.kind != "audio",
+            plan.seekable && !plan.live,
+        )
+    }
+
+    fun playCurrentPlan(
+        url: String,
+        position: Int,
+        autoplay: Boolean,
+        video: Boolean,
+        seekable: Boolean,
+    ) {
+        val plan = model.state.plan ?: return
+        if (plan.url != url) return
+        preparePlanForPlayback(plan.copy(resumePositionMs = position), autoplay, video, seekable)
+    }
+
+    private fun preparePlanForPlayback(
+        plan: PlaybackPlan,
+        autoplay: Boolean,
+        video: Boolean,
+        seekable: Boolean,
+    ) {
+        cancelPendingPreparation()
         if (plan.mode == "EXTERNAL_PLAYER") {
             model.mediaState("FAILED", plan.resumePositionMs, 0)
             return
         }
+        if (plan.prepareBeforePlayback) beginPreparedPlayback(plan, autoplay, video, seekable)
+        else startReadyPlan(plan, autoplay, video, seekable)
+    }
+
+    private fun beginPreparedPlayback(
+        plan: PlaybackPlan,
+        autoplay: Boolean,
+        video: Boolean,
+        seekable: Boolean,
+    ) {
+        val pending =
+            PendingPreparation(
+                plan,
+                plan.resumePositionMs,
+                video,
+                seekable,
+                PlaybackReadinessCancellation(),
+            )
+        pending.autoplay = autoplay
+        pendingPreparation = pending
+        val task = FutureTask {
+            awaitPlaybackReadiness(pending)
+            Unit
+        }
+        pending.task = task
+        try {
+            readinessExecutor.execute(task)
+        } catch (_: RuntimeException) {
+            if (pendingPreparation === pending) {
+                pendingPreparation = null
+                model.mediaState("FAILED", plan.resumePositionMs, 0)
+            }
+        }
+    }
+
+    private fun awaitPlaybackReadiness(pending: PendingPreparation) {
+        val deadline =
+            android.os.SystemClock.elapsedRealtime() + PlaybackReadinessPolicy.MAX_WAIT_MS
+        while (!closed && !pending.cancellation.cancelled) {
+            val remaining = deadline - android.os.SystemClock.elapsedRealtime()
+            if (remaining <= 0) {
+                failPreparedPlayback(pending)
+                return
+            }
+            val result =
+                try {
+                    readinessRepository.check(
+                        pending.plan,
+                        minOf(PlaybackReadinessPolicy.REQUEST_TIMEOUT_MS, remaining.toInt()),
+                        pending.cancellation,
+                    )
+                } catch (_: SocketTimeoutException) {
+                    PlaybackReadinessResult(PlaybackReadinessDecision.RETRY)
+                } catch (_: Exception) {
+                    if (pending.cancellation.cancelled || Thread.currentThread().isInterrupted)
+                        PlaybackReadinessResult(PlaybackReadinessDecision.CANCELLED)
+                    else PlaybackReadinessResult(PlaybackReadinessDecision.FAILED)
+                }
+            when (result.decision) {
+                PlaybackReadinessDecision.READY -> {
+                    handler.post {
+                        if (
+                            !closed &&
+                                pendingPreparation === pending &&
+                                model.state.plan?.sessionId == pending.plan.sessionId
+                        ) {
+                            pendingPreparation = null
+                            startReadyPlan(
+                                pending.plan,
+                                pending.autoplay,
+                                pending.video,
+                                pending.seekable,
+                            )
+                        }
+                    }
+                    return
+                }
+                PlaybackReadinessDecision.RETRY -> {
+                    try {
+                        Thread.sleep(
+                            maxOf(PlaybackReadinessPolicy.POLL_INTERVAL_MS, result.retryAfterMs)
+                                .coerceAtMost(remaining)
+                        )
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return
+                    }
+                }
+                PlaybackReadinessDecision.FAILED -> {
+                    failPreparedPlayback(pending)
+                    return
+                }
+                PlaybackReadinessDecision.CANCELLED -> return
+            }
+        }
+    }
+
+    private fun failPreparedPlayback(pending: PendingPreparation) {
+        handler.post {
+            if (
+                !closed &&
+                    pendingPreparation === pending &&
+                    model.state.plan?.sessionId == pending.plan.sessionId
+            ) {
+                pendingPreparation = null
+                model.mediaState("FAILED", pending.plan.resumePositionMs, 0)
+            }
+        }
+    }
+
+    private fun startReadyPlan(
+        plan: PlaybackPlan,
+        autoplay: Boolean,
+        video: Boolean,
+        seekable: Boolean,
+    ) {
         if (focus.acquire())
             player.play(
                 plan.url,
                 plan.resumePositionMs,
-                autoplay = model.state.progress.state != "PAUSED",
-                video = item.kind != "audio",
-                seekable = plan.seekable && !plan.live,
+                autoplay = autoplay,
+                video = video,
+                seekable = seekable && plan.seekable && !plan.live,
                 mime = plan.mime,
             )
         else model.mediaState("FAILED", plan.resumePositionMs, 0)
+    }
+
+    fun setPendingPlaybackPaused(paused: Boolean): Boolean {
+        val pending = pendingPreparation ?: return false
+        if (model.state.plan?.sessionId != pending.plan.sessionId) return false
+        pending.autoplay = !paused
+        model.mediaState(if (paused) "PAUSED" else "BUFFERING", pending.positionMs, 0)
+        return true
+    }
+
+    private fun cancelPendingPreparation() {
+        val pending = pendingPreparation ?: return
+        pendingPreparation = null
+        pending.cancellation.cancel()
+        pending.task?.let { task ->
+            task.cancel(true)
+            readinessExecutor.remove(task)
+        }
+        readinessExecutor.purge()
     }
 
     fun discard(plan: PlaybackPlan, incoming: Boolean) {
@@ -380,7 +583,9 @@ class PlaybackService : Service() {
 
     fun toggle() {
         if (airplayCommand("toggle")) return
-        if (model.setRecoveryPaused(model.state.progress.state != "PAUSED")) return
+        val paused = model.state.progress.state != "PAUSED"
+        if (model.setRecoveryPaused(paused)) return
+        if (setPendingPlaybackPaused(paused)) return
         if (model.state.incoming && model.state.item?.provider == "spotify") {
             val action = if (receiverPlaybackState == "PAUSED") "resume" else "pause"
             worker.execute {
@@ -437,6 +642,7 @@ class PlaybackService : Service() {
             "pause" -> {
                 if (airplayCommand(command)) return
                 val paused = command == "pause"
+                if (setPendingPlaybackPaused(paused)) return
                 if (model.state.incoming && model.state.item?.provider == "spotify") {
                     worker.execute {
                         try {
@@ -540,6 +746,8 @@ class PlaybackService : Service() {
 
     override fun onDestroy() {
         closed = true
+        cancelPendingPreparation()
+        readinessExecutor.shutdownNow()
         handler.removeCallbacks(receiverPoll)
         handler.removeCallbacks(youtubePoll)
         youtubeListener = null

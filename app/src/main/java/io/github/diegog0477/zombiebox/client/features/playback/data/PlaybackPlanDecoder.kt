@@ -6,14 +6,15 @@ import org.json.JSONObject
 internal object PlaybackPlanDecoder {
     fun decode(base: String, plan: JSONObject) =
         PlaybackPlan(
-            plan.getString("sessionId"),
-            base + plan.getString("url"),
-            plan.optString("mimeType", "video/mp4"),
-            plan.optString("mode"),
-            plan.optInt("resumePositionMs"),
-            plan.optInt("timelineOffsetMs"),
-            plan.optBoolean("live"),
-            plan.optBoolean("seekable", true),
-            if (plan.has("subtitleId")) plan.getInt("subtitleId") else null,
+            sessionId = plan.getString("sessionId"),
+            url = base + plan.getString("url"),
+            mime = plan.optString("mimeType", "video/mp4"),
+            mode = plan.optString("mode"),
+            resumePositionMs = plan.optInt("resumePositionMs"),
+            timelineOffsetMs = plan.optInt("timelineOffsetMs"),
+            live = plan.optBoolean("live"),
+            seekable = plan.optBoolean("seekable", true),
+            subtitleId = if (plan.has("subtitleId")) plan.getInt("subtitleId") else null,
+            prepareBeforePlayback = plan.optBoolean("prepareBeforePlayback", false),
         )
 }
