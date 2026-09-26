@@ -322,6 +322,9 @@ class MainActivity : Activity() {
     private var receiverOptionsPanel: TvChoicePanel? = null
     private var receiverOptionsLoading = false
     private var audioOptionsPanel: TvChoicePanel? = null
+    private var activeQualityDialog: QualityDialog? = null
+    private var qualityDialogSession = ""
+    private var qualityDialogGeneration = 0
     private val receiverTick =
         object : Runnable {
             override fun run() {
@@ -1210,6 +1213,7 @@ class MainActivity : Activity() {
                 if (universalReception) player.standbyYouTube() else player.disableYouTube()
                 stopPlayback(keepReceiver = true)
                 session = change.plan.sessionId
+                qualityModel.attach(session)
                 incomingReceiverSession = session
                 stream = api.base + change.plan.path
                 mime = change.plan.mime
@@ -1449,6 +1453,7 @@ class MainActivity : Activity() {
     }
 
     private fun attachTracks(plan: PlaybackPlan, subtitleId: Int? = plan.subtitleId) {
+        dismissQualityDialogForSession(plan.sessionId)
         tracksModel.attach(plan.sessionId)
         qualityModel.attach(plan.sessionId)
         if (subtitleId != null) {
@@ -1467,26 +1472,39 @@ class MainActivity : Activity() {
             showAirPlayQualityRoute()
             return
         }
-        qualityModel.inventory(
-            { inventory ->
-                QualityDialog(this).show(inventory) { selectedId ->
-                    if (
+        if (activeQualityDialog?.isShowing() == true) return
+
+        activeQualityDialog?.dismiss()
+        val requestGeneration = ++qualityDialogGeneration
+        val initialInventory = qualityModel.cachedInventory()
+        var latestInventory = initialInventory
+        val dialog = QualityDialog(this)
+        activeQualityDialog = dialog
+        qualityDialogSession = requestedSession
+        dialog.show(
+            initial = initialInventory,
+            select = { selectedId ->
+                val currentInventory = latestInventory
+                if (
+                    !closed &&
+                        !isFinishing &&
                         requestedSession == session &&
-                            selectedId.isNotEmpty() &&
-                            selectedId != inventory.selectedId
-                    ) {
-                        val paused =
-                            !PlaybackIntent.replacementAutoplay(
-                                lastState,
-                                playerChrome.optimisticPlaying(),
-                            )
-                        val incoming =
-                            youtubeIncoming || receiverViewModel.activeSession == requestedSession
-                        val requestedPosition = lastPosition
-                        qualityModel.select(
-                            selectedId,
-                            requestedPosition,
-                            { plan ->
+                        selectedId.isNotEmpty() &&
+                        selectedId != currentInventory?.selectedId
+                ) {
+                    val paused =
+                        !PlaybackIntent.replacementAutoplay(
+                            lastState,
+                            playerChrome.optimisticPlaying(),
+                        )
+                    val incoming =
+                        youtubeIncoming || receiverViewModel.activeSession == requestedSession
+                    val requestedPosition = lastPosition
+                    qualityModel.select(
+                        selectedId,
+                        requestedPosition,
+                        { plan ->
+                            if (!closed && !isFinishing && requestedSession == session) {
                                 if (
                                     currentItem?.provider == "youtube" &&
                                         selectedId != "auto" &&
@@ -1513,14 +1531,76 @@ class MainActivity : Activity() {
                                     currentItem?.kind != "audio",
                                     playbackSeekable,
                                 )
-                            },
-                            ::error,
-                        )
-                    }
+                            }
+                        },
+                        { failure ->
+                            if (!closed && !isFinishing && requestedSession == session)
+                                error(failure)
+                        },
+                    )
                 }
             },
-            ::error,
+            retry = {
+                refreshQualityDialog(dialog, requestedSession, requestGeneration) {
+                    latestInventory = it
+                }
+            },
+            dismissed = {
+                if (activeQualityDialog === dialog) {
+                    activeQualityDialog = null
+                    qualityDialogSession = ""
+                }
+            },
         )
+        refreshQualityDialog(dialog, requestedSession, requestGeneration) { latestInventory = it }
+    }
+
+    private fun refreshQualityDialog(
+        dialog: QualityDialog,
+        requestedSession: String,
+        requestGeneration: Int,
+        onInventory:
+            (
+                io.github.diegog0477.zombiebox.client.features.playback.domain.model.QualityInventory
+            ) -> Unit,
+    ) {
+        if (!isCurrentQualityDialog(dialog, requestedSession, requestGeneration)) return
+        dialog.showLoading()
+        qualityModel.inventory(
+            { inventory ->
+                if (isCurrentQualityDialog(dialog, requestedSession, requestGeneration)) {
+                    onInventory(inventory)
+                    dialog.update(inventory)
+                }
+            },
+            {
+                if (isCurrentQualityDialog(dialog, requestedSession, requestGeneration))
+                    dialog.showError()
+            },
+        )
+    }
+
+    private fun isCurrentQualityDialog(
+        dialog: QualityDialog,
+        requestedSession: String,
+        requestGeneration: Int,
+    ) =
+        !closed &&
+            !isFinishing &&
+            session == requestedSession &&
+            qualityDialogSession == requestedSession &&
+            qualityDialogGeneration == requestGeneration &&
+            activeQualityDialog === dialog &&
+            dialog.isShowing()
+
+    private fun dismissQualityDialogForSession(nextSession: String) {
+        if (qualityDialogSession.isNotEmpty() && qualityDialogSession != nextSession) {
+            qualityDialogGeneration++
+            val dialog = activeQualityDialog
+            activeQualityDialog = null
+            qualityDialogSession = ""
+            dialog?.dismiss()
+        }
     }
 
     private fun showAirPlayQualityRoute() {
@@ -2007,6 +2087,7 @@ class MainActivity : Activity() {
     }
 
     private fun stopPlayback(keepReceiver: Boolean = false, endSession: Boolean = true) {
+        dismissQualityDialogForSession("")
         playbackFailure.dismiss()
         playbackPending = false
         showPlaybackFeedback(null)
@@ -2453,6 +2534,10 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         playbackFailure.dismiss()
         closed = true
+        qualityDialogGeneration++
+        activeQualityDialog?.dismiss()
+        activeQualityDialog = null
+        qualityDialogSession = ""
         invalidateYouTubeBrowse()
         receiverOptionsPanel?.dismiss()
         audioOptionsPanel?.dismiss()

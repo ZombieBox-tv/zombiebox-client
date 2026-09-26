@@ -57,6 +57,21 @@ class QualityViewModelTest {
         assertNotNull(inventory)
         assertEquals("auto", inventory?.selectedId)
         assertEquals(3, inventory?.options?.size)
+        assertEquals(inventory, model.cachedInventory())
+    }
+
+    @Test
+    fun cachedInventoryIsScopedToAttachedSession() {
+        val repo = FakeRepository()
+        val model = QualityViewModel(repo, { it() }, { it() })
+
+        model.attach("session-1")
+        model.inventory({}, { throw it })
+        assertNotNull(model.cachedInventory())
+
+        model.attach("session-2")
+
+        assertNull(model.cachedInventory())
     }
 
     @Test
@@ -95,6 +110,7 @@ class QualityViewModelTest {
         assertEquals(42000, plan?.resumePositionMs)
         assertEquals("720p", repo.selectedQualityId)
         assertEquals(42000, repo.selectedPositionMs)
+        assertNull(model.cachedInventory())
     }
 
     @Test

@@ -9,14 +9,23 @@ class QualityViewModel(
     private val execute: (() -> Unit) -> Unit,
     private val deliver: (() -> Unit) -> Unit,
 ) {
+    private data class CachedInventory(val sessionId: String, val value: QualityInventory)
+
     @Volatile private var generation = 0
     @Volatile private var closed = false
-    private var session = ""
+    @Volatile private var session = ""
+    @Volatile private var cached: CachedInventory? = null
 
     fun attach(id: String) {
-        generation++
+        if (session != id) {
+            generation++
+            cached = null
+        }
         session = id
     }
+
+    fun cachedInventory(): QualityInventory? =
+        cached?.takeIf { !closed && it.sessionId == session && session.isNotEmpty() }?.value
 
     fun inventory(done: (QualityInventory) -> Unit, failed: (Exception) -> Unit) =
         load(done, failed)
@@ -28,9 +37,14 @@ class QualityViewModel(
         execute {
             try {
                 val inventory = repository.qualities(id)
-                deliver { if (!closed && request == generation) done(inventory) }
+                deliver {
+                    if (isCurrent(request, id)) {
+                        cached = CachedInventory(id, inventory)
+                        done(inventory)
+                    }
+                }
             } catch (error: Exception) {
-                deliver { if (!closed && request == generation) failed(error) }
+                deliver { if (isCurrent(request, id)) failed(error) }
             }
         }
     }
@@ -48,19 +62,26 @@ class QualityViewModel(
             try {
                 val plan = repository.select(id, qualityId, positionMs)
                 deliver {
-                    if (!closed && request == generation) {
+                    if (isCurrent(request, id)) {
                         session = plan.sessionId
+                        generation++
+                        cached = null
                         done(plan)
                     }
                 }
             } catch (error: Exception) {
-                deliver { if (!closed && request == generation) failed(error) }
+                deliver { if (isCurrent(request, id)) failed(error) }
             }
         }
     }
 
     fun close() {
-        attach("")
         closed = true
+        generation++
+        session = ""
+        cached = null
     }
+
+    private fun isCurrent(request: Int, id: String) =
+        !closed && request == generation && id == session
 }

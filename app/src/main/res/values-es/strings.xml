@@ -64,6 +64,10 @@
     <string name="expand">Ampliar</string>
     <string name="more_info">Más información</string>
     <string name="quality">Calidad</string>
+    <string name="quality_loading">Cargando calidades disponibles…</string>
+    <string name="quality_refreshing">Actualizando calidades disponibles…</string>
+    <string name="quality_load_failed">No se pudieron cargar las opciones de calidad.</string>
+    <string name="quality_retry">Reintentar</string>
     <string name="airplay_quality_title">Ruta de audio AirPlay</string>
     <string name="airplay_quality_summary">
         Fuente de Apple: sin medir\nPuente: AAC (objetivo de 128 kb/s)\nSalida de TV: PCM 44,1
