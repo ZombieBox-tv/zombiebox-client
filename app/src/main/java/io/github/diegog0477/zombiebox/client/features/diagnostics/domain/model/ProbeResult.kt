@@ -8,4 +8,5 @@ data class ProbeResult(
     val positionMs: Int = 0,
     val completed: Boolean = false,
     val stalled: Boolean = false,
+    val detail: String = "",
 )

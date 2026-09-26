@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.view.Gravity
@@ -624,14 +623,6 @@ class MainActivity : Activity() {
     }
 
     private fun diagnostics() {
-        val report =
-            getString(
-                R.string.diagnostics_report,
-                Build.VERSION.SDK_INT,
-                Build.MANUFACTURER,
-                Build.MODEL,
-                Build.CPU_ABI,
-            )
         val model =
             io.github.diegog0477.zombiebox.client.features.diagnostics.presentation.viewmodel
                 .DiagnosticsViewModel(

@@ -80,7 +80,7 @@ class GatewayProbeRepository(
         )
             values.put(previous.getJSONObject(i))
         results.forEach {
-            values.put(
+            val entry =
                 JSONObject()
                     .put("id", it.id)
                     .put("status", it.status)
@@ -90,7 +90,10 @@ class GatewayProbeRepository(
                     .put("completed", it.completed)
                     .put("droppedOrStalled", it.stalled)
                     .put("testedAt", testedAt)
-            )
+            if (it.detail.isNotEmpty()) {
+                entry.put("detail", it.detail.take(120))
+            }
+            values.put(entry)
         }
         api.request(
             "PUT",

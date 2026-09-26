@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.StatFs
 import android.view.InputDevice
+import io.github.diegog0477.zombiebox.client.core.platform.AbiDetector
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.model.HardwareReport
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.repository.HardwareSource
 import java.io.File
@@ -19,14 +20,14 @@ class HardwareScanner(context: Context) : HardwareSource {
     override fun scan(): HardwareReport {
         val abis = ArrayList<String>()
         fun abi(value: String?) {
+            val normalized = value?.trim()?.lowercase() ?: return
             if (
-                value != null &&
-                    value !in listOf("unknown", "", "null") &&
-                    value.length < 80 &&
-                    !abis.contains(value) &&
+                normalized !in listOf("unknown", "", "null", "none") &&
+                    normalized.length < 80 &&
+                    !abis.contains(normalized) &&
                     abis.size < 8
             )
-                abis.add(value)
+                abis.add(normalized)
         }
         if (Build.VERSION.SDK_INT >= 21)
             try {
@@ -40,11 +41,9 @@ class HardwareScanner(context: Context) : HardwareSource {
             try {
                 val buffer = CharArray(16384)
                 val length = File("/proc/cpuinfo").reader().use { it.read(buffer) }
-                val cpu = if (length > 0) String(buffer, 0, length).lowercase() else ""
-                when {
-                    cpu.contains("aarch64") || cpu.contains("armv8") -> abi("arm64-v8a")
-                    cpu.contains("armv7") -> abi("armeabi-v7a")
-                    cpu.contains("intel") || cpu.contains("amd") -> abi("x86-family")
+                if (length > 0) {
+                    val detected = parseCpuInfoAbi(String(buffer, 0, length))
+                    if (detected != null) abi(detected)
                 }
             } catch (_: Exception) {}
         val inventory = PlatformInventory(context).scan()
@@ -158,5 +157,11 @@ class HardwareScanner(context: Context) : HardwareSource {
                     hints.add("service:hdmi_control")
             } catch (_: Exception) {} catch (_: LinkageError) {}
         return hints.distinct().take(32)
+    }
+
+    companion object {
+        fun parseCpuInfoAbi(cpu: String): String? {
+            return AbiDetector.parseCpuInfo(cpu)
+        }
     }
 }

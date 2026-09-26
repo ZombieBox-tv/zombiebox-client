@@ -44,13 +44,20 @@ class DiagnosticsDialog(private val activity: Activity, private val model: Diagn
 
     fun show() {
         if (activity.isFinishing) return
+        val displayAbi = Build.CPU_ABI?.trim()?.lowercase()
+        val initialAbi =
+            if (displayAbi != null && displayAbi !in listOf("unknown", "", "null", "none")) {
+                displayAbi
+            } else {
+                activity.getString(R.string.probe_unknown)
+            }
         summary =
             activity.getString(
                 R.string.diagnostics_report,
                 Build.VERSION.SDK_INT,
                 Build.MANUFACTURER,
                 Build.MODEL,
-                Build.CPU_ABI,
+                initialAbi,
             )
         val portrait =
             activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT ||
@@ -113,7 +120,8 @@ class DiagnosticsDialog(private val activity: Activity, private val model: Diagn
                     else ->
                         activity.getString(
                             R.string.hardware_report,
-                            hardware.abis.joinToString(", "),
+                            if (hardware.abis.isEmpty()) activity.getString(R.string.probe_unknown)
+                            else hardware.abis.joinToString(", "),
                             hardware.cores,
                             hardware.memoryMb,
                             hardware.storageFreeMb,

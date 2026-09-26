@@ -30,6 +30,7 @@ class PlatformProbes(
         val run = ++generation
         execute {
             var lock: WifiManager.MulticastLock? = null
+            var detail = ""
             val status =
                 try {
                     val wifi = context.getSystemService(Context.WIFI_SERVICE) as? WifiManager
@@ -59,7 +60,10 @@ class PlatformProbes(
                                     packet.data.take(packet.length) == nonce.toList()
                             )
                                 "PASS"
-                            else "UNKNOWN"
+                            else {
+                                detail = "payload_mismatch"
+                                "UNKNOWN"
+                            }
                         } finally {
                             channel.leaveGroup(group)
                         }
@@ -67,8 +71,10 @@ class PlatformProbes(
                         channel.close()
                     }
                 } catch (_: SocketTimeoutException) {
+                    detail = "multicast_timeout"
                     "UNKNOWN"
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    detail = "multicast_error:" + e.javaClass.simpleName
                     "UNKNOWN"
                 } finally {
                     socket = null
@@ -76,7 +82,9 @@ class PlatformProbes(
                         lock?.release()
                     } catch (_: Exception) {}
                 }
-            deliver { if (run == generation) result(ProbeResult(asset.id, status)) }
+            deliver {
+                if (run == generation) result(ProbeResult(asset.id, status, detail = detail))
+            }
         }
     }
 

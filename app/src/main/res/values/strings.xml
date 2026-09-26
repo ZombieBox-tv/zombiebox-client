@@ -323,8 +323,9 @@
     <string name="player_timeline_position">Timeline: %1$s of %2$s. Left or right to seek.</string>
     <string name="player_timeline_unavailable">Timeline unavailable</string>
     <string name="probe_description">
-        Plays muted synthetic clips, one at a time. Results are saved on the gateway. Run again
-        after system updates; a passing result still needs visual confirmation.
+        Plays muted synthetic clips, one at a time. Results are saved on the gateway. A PASS
+        confirms decoding and timeline advancement; it does not confirm physical 1080p display
+        output.
     </string>
     <string name="probes_unavailable">
         Probe assets unavailable or results could not be saved. Generate fixtures on your gateway

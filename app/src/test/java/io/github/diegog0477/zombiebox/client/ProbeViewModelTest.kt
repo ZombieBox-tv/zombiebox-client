@@ -64,7 +64,41 @@ class ProbeViewModelTest {
         model.start()
         assertEquals(listOf("hevc-1080-main"), started)
         assertEquals("UNKNOWN", saved.last().status)
+        assertEquals("prerequisite_unmet:hevc-1080-main", saved.last().detail)
         assertTrue(model.state.saved)
+    }
+
+    @Test
+    fun failureDetailIsRetainedInResultsAndSaved() {
+        var saved = emptyList<ProbeResult>()
+        val repository =
+            object : ProbeRepository {
+                override fun assets() = listOf(ProbeAsset("aac-adts", "http://fixture", false))
+
+                override fun save(results: List<ProbeResult>) {
+                    saved = results
+                }
+            }
+        val player =
+            object : ProbePlayback {
+                override fun start(asset: ProbeAsset, result: (ProbeResult) -> Unit) {
+                    result(
+                        ProbeResult(
+                            asset.id,
+                            "UNKNOWN",
+                            detail = "what=1,extra=-1004@prepare http=200,audio/aac",
+                        )
+                    )
+                }
+
+                override fun cancel() {}
+            }
+        val model = ProbeViewModel(repository, player, { it() }, { it() })
+        model.start()
+        assertEquals(1, saved.size)
+        assertEquals("what=1,extra=-1004@prepare http=200,audio/aac", saved[0].detail)
+        assertEquals(1, model.state.results.size)
+        assertEquals("what=1,extra=-1004@prepare http=200,audio/aac", model.state.results[0].detail)
     }
 
     @Test

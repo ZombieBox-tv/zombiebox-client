@@ -86,7 +86,17 @@ class ProbeViewModel(
             prerequisite.isNotEmpty() &&
                 results.none { it.id == prerequisite && it.status == "PASS" && !it.stalled }
         ) {
-            next(run, assets, index + 1, results + ProbeResult(assets[index].id, "UNKNOWN"))
+            next(
+                run,
+                assets,
+                index + 1,
+                results +
+                    ProbeResult(
+                        assets[index].id,
+                        "UNKNOWN",
+                        detail = "prerequisite_unmet:$prerequisite",
+                    ),
+            )
             return
         }
         publish(ProbeState(running = true, current = assets[index].id, results = results))

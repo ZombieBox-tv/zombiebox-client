@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
+import io.github.diegog0477.zombiebox.client.core.platform.AbiDetector
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -13,6 +14,29 @@ class RegistrationPayload(private val context: Context) {
         val display = context.resources.displayMetrics
         val touch = context.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
         val memory = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val abis = ArrayList<String>()
+        val primaryAbi = Build.CPU_ABI?.trim()?.lowercase()
+        if (primaryAbi != null && primaryAbi !in listOf("unknown", "", "null", "none")) {
+            abis.add(primaryAbi)
+        }
+        val secondaryAbi = Build.CPU_ABI2?.trim()?.lowercase()
+        if (
+            secondaryAbi != null &&
+                secondaryAbi !in listOf("unknown", "", "null", "none") &&
+                !abis.contains(secondaryAbi)
+        ) {
+            abis.add(secondaryAbi)
+        }
+        if (abis.isEmpty()) {
+            try {
+                val buffer = CharArray(4096)
+                val length = java.io.File("/proc/cpuinfo").reader().use { it.read(buffer) }
+                if (length > 0) {
+                    val detected = AbiDetector.parseCpuInfo(String(buffer, 0, length))
+                    if (detected != null) abis.add(detected)
+                }
+            } catch (_: Exception) {}
+        }
         return JSONObject()
             .put(
                 "clientVersion",
@@ -27,7 +51,7 @@ class RegistrationPayload(private val context: Context) {
                     .put("release", Build.VERSION.RELEASE)
                     .put("manufacturer", Build.MANUFACTURER)
                     .put("model", Build.MODEL)
-                    .put("abis", JSONArray().put(Build.CPU_ABI)),
+                    .put("abis", JSONArray(abis)),
             )
             .put(
                 "display",

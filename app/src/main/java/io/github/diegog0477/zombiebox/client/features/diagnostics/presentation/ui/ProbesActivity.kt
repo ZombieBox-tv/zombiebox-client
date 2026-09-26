@@ -150,16 +150,21 @@ class ProbesActivity : Activity() {
                     value.current +
                     "\n" +
                     value.results.joinToString("\n") {
-                        getString(
-                            R.string.probe_result,
-                            it.id,
+                        val outcome =
                             getString(
                                 when (it.status) {
                                     "PASS" -> R.string.probe_pass
                                     "FAIL" -> R.string.probe_fail
                                     else -> R.string.probe_unknown
                                 }
-                            ),
+                            )
+                        val extraInfo =
+                            if (it.status != "PASS" && it.detail.isNotEmpty()) " (${it.detail})"
+                            else ""
+                        getString(
+                            R.string.probe_result,
+                            it.id,
+                            outcome + extraInfo,
                             it.prepareMs,
                             it.positionMs,
                         )

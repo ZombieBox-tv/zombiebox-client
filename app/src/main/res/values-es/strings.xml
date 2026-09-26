@@ -344,7 +344,8 @@
     <string name="player_timeline_unavailable">Línea de tiempo no disponible</string>
     <string name="probe_description">
         Reproduce clips sintéticos sin sonido, uno a la vez. Los resultados se guardan en el
-        gateway. Repite después de actualizar el sistema; confirma visualmente los resultados.
+        gateway. Un resultado PASS confirma decodificación y avance en línea de tiempo; no confirma
+        salida física 1080p en pantalla.
     </string>
     <string name="probes_unavailable">
         Pruebas no disponibles o no se pudieron guardar. Genera los clips en el gateway y reintenta.

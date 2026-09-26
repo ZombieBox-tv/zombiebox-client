@@ -9,6 +9,10 @@ import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.model.P
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.model.ProbeResult
 import io.github.diegog0477.zombiebox.client.features.diagnostics.domain.repository.ProbePlayback
 import io.github.diegog0477.zombiebox.client.features.playback.platform.PlayerSurface
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.URL
 
 /** API9 calls only. Completion and advancement are evidence, prepare alone is not. */
 class MediaProbePlayback : ProbePlayback {
@@ -22,11 +26,17 @@ class MediaProbePlayback : ProbePlayback {
     private var generation = 0
     private var closed = false
 
+    private enum class ProbeStage {
+        PREPARING,
+        PLAYING,
+    }
+
     override fun start(asset: ProbeAsset, result: (ProbeResult) -> Unit) {
         handler.post {
             if (closed) return@post
             dispose()
             val run = ++generation
+            var stage = ProbeStage.PREPARING
             val started = SystemClock.elapsedRealtime()
             var prepareMs = 0
             var firstFrameMs = 0
@@ -39,7 +49,12 @@ class MediaProbePlayback : ProbePlayback {
             var operationComplete = asset.kind in listOf("playback", "hls", "texture-output")
             var operationPosition = 0
             var advancedAfterOperation = false
-            fun finish(status: String, completed: Boolean = false, stalled: Boolean = false) {
+            fun finish(
+                status: String,
+                completed: Boolean = false,
+                stalled: Boolean = false,
+                detail: String = "",
+            ) {
                 if (finished || run != generation) return
                 finished = true
                 dispose()
@@ -52,6 +67,7 @@ class MediaProbePlayback : ProbePlayback {
                         positionMs,
                         completed,
                         stalled,
+                        detail = detail.take(120),
                     )
                 )
             }
@@ -87,14 +103,18 @@ class MediaProbePlayback : ProbePlayback {
                                                                 media.currentPosition - pausedAt
                                                             ) > 200
                                                     ) {
-                                                        finish("FAIL")
+                                                        finish("FAIL", detail = "pause_failed")
                                                     } else {
                                                         operationPosition = media.currentPosition
                                                         operationComplete = true
                                                         media.start()
                                                     }
-                                                } catch (_: Exception) {
-                                                    finish("UNKNOWN")
+                                                } catch (e: Exception) {
+                                                    finish(
+                                                        "UNKNOWN",
+                                                        detail =
+                                                            "resume_error:${e.javaClass.simpleName}",
+                                                    )
                                                 }
                                             },
                                             300,
@@ -109,24 +129,32 @@ class MediaProbePlayback : ProbePlayback {
                                                 try {
                                                     val holder = surface
                                                     if (holder == null || !holder.surface.isValid) {
-                                                        finish("UNKNOWN")
+                                                        finish(
+                                                            "UNKNOWN",
+                                                            detail = "surface_invalid",
+                                                        )
                                                     } else {
                                                         media.setDisplay(holder)
                                                         operationPosition = media.currentPosition
                                                         operationComplete = true
                                                     }
-                                                } catch (_: Exception) {
-                                                    finish("UNKNOWN")
+                                                } catch (e: Exception) {
+                                                    finish(
+                                                        "UNKNOWN",
+                                                        detail =
+                                                            "surface_error:${e.javaClass.simpleName}",
+                                                    )
                                                 }
                                             },
                                             200,
                                         )
                                     }
-                                    else -> finish("UNKNOWN")
+                                    else ->
+                                        finish("UNKNOWN", detail = "unsupported_kind:${asset.kind}")
                                 }
                             }
-                        } catch (_: Exception) {
-                            finish("UNKNOWN")
+                        } catch (e: Exception) {
+                            finish("UNKNOWN", detail = "tick_error:${e.javaClass.simpleName}")
                         }
                         handler.postDelayed(this, 100)
                     }
@@ -137,7 +165,7 @@ class MediaProbePlayback : ProbePlayback {
                     if (asset.kind == "texture-output") {
                         val output = textureSurface
                         if (output == null) {
-                            finish("UNKNOWN")
+                            finish("UNKNOWN", detail = "missing_texture")
                             return@post
                         }
                         output.retain()
@@ -145,7 +173,7 @@ class MediaProbePlayback : ProbePlayback {
                         output.attach(media)
                     } else {
                         if (surface == null) {
-                            finish("UNKNOWN")
+                            finish("UNKNOWN", detail = "missing_surface")
                             return@post
                         }
                         media.setDisplay(surface)
@@ -154,11 +182,12 @@ class MediaProbePlayback : ProbePlayback {
                 media.setOnPreparedListener {
                     if (finished || run != generation) return@setOnPreparedListener
                     prepareMs = (SystemClock.elapsedRealtime() - started).toInt()
+                    stage = ProbeStage.PLAYING
                     try {
                         media.start()
                         handler.post(tick)
-                    } catch (_: Exception) {
-                        finish("UNKNOWN")
+                    } catch (e: Exception) {
+                        finish("UNKNOWN", detail = "start_failed:${e.javaClass.simpleName}")
                     }
                 }
                 media.setOnInfoListener { _, what, _ ->
@@ -178,9 +207,9 @@ class MediaProbePlayback : ProbePlayback {
                             if (current in 0..350) {
                                 operationPosition = current
                                 operationComplete = true
-                            } else finish("FAIL")
-                        } catch (_: Exception) {
-                            finish("UNKNOWN")
+                            } else finish("FAIL", detail = "seek_pos:$current")
+                        } catch (e: Exception) {
+                            finish("UNKNOWN", detail = "seek_error:${e.javaClass.simpleName}")
                         }
                     }
                 }
@@ -189,17 +218,97 @@ class MediaProbePlayback : ProbePlayback {
                         operationComplete &&
                             advancedAfterOperation &&
                             (asset.kind != "texture-output" || textureFrames() - initialFrames >= 3)
-                    finish(if (passed) "PASS" else "UNKNOWN", completed = true)
+                    val detail =
+                        if (passed) ""
+                        else
+                            when {
+                                !operationComplete -> "operation_incomplete"
+                                !advancedAfterOperation -> "no_advance"
+                                else -> "insufficient_frames"
+                            }
+                    finish(if (passed) "PASS" else "UNKNOWN", completed = true, detail = detail)
                 }
                 media.setOnErrorListener { _, what, extra ->
-                    finish(if (extra == -1010 || extra == -1007) "FAIL" else "UNKNOWN")
+                    if (finished || run != generation) return@setOnErrorListener true
+                    val stageStr =
+                        when (stage) {
+                            ProbeStage.PREPARING -> "prepare"
+                            ProbeStage.PLAYING -> "playback"
+                        }
+                    val status = if (extra == -1010 || extra == -1007) "FAIL" else "UNKNOWN"
+                    val baseDetail = "what=$what,extra=$extra@$stageStr"
+                    if (asset.url.startsWith("http")) {
+                        // Offload blocking network I/O so the HandlerThread is not held for up to
+                        // 4 s (HEAD + GET fallback). Post finish() back to preserve thread-safety
+                        // of the finished flag and honour generation cancellation.
+                        Thread {
+                                val evidence = probeHttpEvidence(asset.url)
+                                val errDetail =
+                                    if (evidence.isNotEmpty()) "$baseDetail $evidence"
+                                    else baseDetail
+                                handler.post { finish(status, detail = errDetail) }
+                            }
+                            .also { it.isDaemon = true }
+                            .start()
+                    } else {
+                        finish(status, detail = baseDetail)
+                    }
                     true
                 }
                 media.setDataSource(asset.url)
                 media.prepareAsync()
-                handler.postDelayed({ finish("UNKNOWN", stalled = prepareMs > 0) }, 12000)
-            } catch (_: Exception) {
-                finish("UNKNOWN")
+                handler.postDelayed(
+                    {
+                        if (finished || run != generation) return@postDelayed
+                        val capturedStage = stage
+                        val stageStr =
+                            when (capturedStage) {
+                                ProbeStage.PREPARING -> "prepare"
+                                ProbeStage.PLAYING -> "playback"
+                            }
+                        if (capturedStage == ProbeStage.PREPARING && asset.url.startsWith("http")) {
+                            // Offload blocking network I/O; post finish() back to HandlerThread.
+                            Thread {
+                                    val evidence = probeHttpEvidence(asset.url)
+                                    val timeoutDetail = buildString {
+                                        append("timeout@").append(stageStr)
+                                        if (evidence.isNotEmpty()) append(" ").append(evidence)
+                                    }
+                                    handler.post {
+                                        // stage == PREPARING still means stalled = false (not yet
+                                        // played)
+                                        finish("UNKNOWN", stalled = false, detail = timeoutDetail)
+                                    }
+                                }
+                                .also { it.isDaemon = true }
+                                .start()
+                        } else {
+                            val timeoutDetail = "timeout@$stageStr"
+                            // stage == PLAYING: prepare completed, playback timed out => stalled
+                            finish(
+                                "UNKNOWN",
+                                stalled = capturedStage == ProbeStage.PLAYING,
+                                detail = timeoutDetail,
+                            )
+                        }
+                    },
+                    12000,
+                )
+            } catch (e: Exception) {
+                val exBase = "exception:${e.javaClass.simpleName}@prepare"
+                if (asset.url.startsWith("http")) {
+                    // Offload blocking network I/O; post finish() back to HandlerThread.
+                    Thread {
+                            val evidence = probeHttpEvidence(asset.url)
+                            val exDetail =
+                                if (evidence.isNotEmpty()) "$exBase $evidence" else exBase
+                            handler.post { finish("UNKNOWN", detail = exDetail) }
+                        }
+                        .also { it.isDaemon = true }
+                        .start()
+                } else {
+                    finish("UNKNOWN", detail = exBase)
+                }
             }
         }
     }
@@ -226,6 +335,53 @@ class MediaProbePlayback : ProbePlayback {
             generation++
             dispose()
             thread.quit()
+        }
+    }
+
+    companion object {
+        fun probeHttpEvidence(urlStr: String, timeoutMs: Int = 2000): String {
+            if (!urlStr.startsWith("http://") && !urlStr.startsWith("https://")) return ""
+            return try {
+                val url = URL(urlStr)
+                fun probe(method: String): Pair<Int, String> {
+                    val conn =
+                        (url.openConnection() as HttpURLConnection).apply {
+                            requestMethod = method
+                            connectTimeout = timeoutMs
+                            readTimeout = timeoutMs
+                            instanceFollowRedirects = false
+                        }
+                    try {
+                        val code = conn.responseCode
+                        val type =
+                            if (code > 0)
+                                conn.contentType?.substringBefore(";")?.trim()?.lowercase() ?: ""
+                            else ""
+                        return code to type
+                    } finally {
+                        conn.disconnect()
+                    }
+                }
+                var (code, type) = probe("HEAD")
+                if (code == 405 || code == -1) {
+                    val fallback = probe("GET")
+                    code = fallback.first
+                    type = fallback.second
+                }
+                if (code in 200..399) {
+                    if (type.isNotEmpty()) "http=$code,$type" else "http=$code"
+                } else if (code > 0) {
+                    "http=$code"
+                } else {
+                    "http=failed"
+                }
+            } catch (_: SocketTimeoutException) {
+                "http=timeout"
+            } catch (_: IOException) {
+                "http=io_error"
+            } catch (_: Exception) {
+                "http=error"
+            }
         }
     }
 }
