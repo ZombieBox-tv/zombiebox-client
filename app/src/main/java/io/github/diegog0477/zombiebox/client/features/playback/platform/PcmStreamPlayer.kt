@@ -29,9 +29,17 @@ internal object PcmStreamPolicy {
     const val DRAIN_TIMEOUT_MS = 5_000L
     const val HEAD_STALL_TIMEOUT_MS = 3_000L
     const val MAX_AUDIO_BUFFER_BYTES = 256 * 1024
-    // The bridge's 0.6-second HLS segments arrive in bursts. Hold enough
-    // PCM to cover a segment plus jitter without adding several seconds of lag.
-    const val TARGET_AUDIO_BUFFER_BYTES = 160 * 1024
+    // Set AudioTrack target buffer to the maximum 256 KiB (~1.486s at 44.1kHz S16LE stereo).
+    const val TARGET_AUDIO_BUFFER_BYTES = MAX_AUDIO_BUFFER_BYTES
+
+    // Documented startup prefill threshold: 1100ms (48,510 frames / 194,040 bytes at 44.1kHz S16LE
+    // stereo).
+    // AirPlay HLS segments arrive in ~1s bursts. Prefilling at least 1100ms deliberately requires
+    // more than one 1s burst, providing temporal jitter reserve against burst starvation
+    // without unbounded buffer growth or artificial wall-clock sleeps.
+    const val STARTUP_PREFILL_MS = 1_100
+    const val STARTUP_PREFILL_FRAMES = 48_510
+    const val STARTUP_PREFILL_BYTES = STARTUP_PREFILL_FRAMES * BYTES_PER_FRAME
 
     private val parameters = mapOf("format" to "s16le", "rate" to "44100", "channels" to "2")
 
@@ -299,6 +307,9 @@ internal class PcmStreamPlayer(
                         response.read(buffer, carry, PcmStreamPolicy.READ_BUFFER_BYTES)
                     } catch (_: SocketTimeoutException) {
                         consecutiveTimeouts += 1
+                        if (job.writtenFrames > 0L && !job.outputStarted) {
+                            startOutput(job, output)
+                        }
                         reportHead(job, output)
                         if (consecutiveTimeouts > PcmStreamPolicy.MAX_CONSECUTIVE_READ_TIMEOUTS)
                             throw IOException("PCM stream read stalled")
@@ -306,7 +317,10 @@ internal class PcmStreamPlayer(
                     }
                 if (count < 0) {
                     if (carry != 0) throw IOException("Incomplete PCM audio frame")
-                    drain(job, output)
+                    if (job.writtenFrames > 0L) {
+                        startOutput(job, output)
+                        drain(job, output)
+                    }
                     job.terminal = true
                     emit(job, "ENDED", job.positionMs)
                     return
@@ -343,19 +357,38 @@ internal class PcmStreamPlayer(
         while (offset < length) {
             waitUntilResumed(job)
             if (job.cancelled) return
-            synchronized(job.monitor) {
-                if (job.cancelled) return
-                if (!job.paused && !job.outputStarted) {
-                    output.play()
-                    job.outputStarted = true
+            val toWrite =
+                if (!job.outputStarted) {
+                    val remainingToPrefill =
+                        PcmStreamPolicy.STARTUP_PREFILL_BYTES.toLong() -
+                            job.writtenFrames * PcmStreamPolicy.BYTES_PER_FRAME
+                    if (remainingToPrefill > 0L) {
+                        minOf((length - offset).toLong(), remainingToPrefill).toInt()
+                    } else {
+                        length - offset
+                    }
+                } else {
+                    length - offset
                 }
-            }
-            val written = output.write(buffer, offset, length - offset)
-            if (written <= 0 || written % PcmStreamPolicy.BYTES_PER_FRAME != 0)
+            val written = output.write(buffer, offset, toWrite)
+            if (written <= 0 || written > toWrite || written % PcmStreamPolicy.BYTES_PER_FRAME != 0)
                 throw IOException("PCM audio output write failed")
             offset += written
             job.writtenFrames += written / PcmStreamPolicy.BYTES_PER_FRAME
+            if (!job.outputStarted && job.writtenFrames >= PcmStreamPolicy.STARTUP_PREFILL_FRAMES) {
+                startOutput(job, output)
+            }
             reportHead(job, output)
+        }
+    }
+
+    private fun startOutput(job: Job, output: PcmAudioOutput) {
+        synchronized(job.monitor) {
+            if (job.cancelled || job.outputStarted) return
+            job.outputStarted = true
+            if (!job.paused) {
+                output.play()
+            }
         }
     }
 

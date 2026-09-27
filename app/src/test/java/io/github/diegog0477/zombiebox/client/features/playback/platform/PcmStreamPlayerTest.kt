@@ -258,6 +258,426 @@ class PcmStreamPlayerTest {
         }
     }
 
+    @Test
+    fun memoryAndCapacityBoundsAreEnforced() {
+        assertEquals(256 * 1024, PcmStreamPolicy.MAX_AUDIO_BUFFER_BYTES)
+        assertEquals(256 * 1024, PcmStreamPolicy.TARGET_AUDIO_BUFFER_BYTES)
+        assertEquals(1_100, PcmStreamPolicy.STARTUP_PREFILL_MS)
+        assertEquals(48_510, PcmStreamPolicy.STARTUP_PREFILL_FRAMES)
+        assertEquals(194_040, PcmStreamPolicy.STARTUP_PREFILL_BYTES)
+        assertTrue(PcmStreamPolicy.STARTUP_PREFILL_BYTES <= PcmStreamPolicy.MAX_AUDIO_BUFFER_BYTES)
+
+        assertEquals(256 * 1024, PcmStreamPolicy.audioBufferBytes(0))
+        assertEquals(256 * 1024, PcmStreamPolicy.audioBufferBytes(64 * 1024))
+        assertEquals(256 * 1024, PcmStreamPolicy.audioBufferBytes(256 * 1024))
+        assertEquals(256 * 1024, PcmStreamPolicy.audioBufferBytes(512 * 1024))
+    }
+
+    @Test
+    fun twoBurstArrivalsQueueOneSecondWithoutPlayingUntilThresholdCrossedAndHeadMoves() {
+        val burst1Delivered = CountDownLatch(1)
+        val allowBurst2 = CountDownLatch(1)
+        val ended = CountDownLatch(1)
+        val states = CopyOnWriteArrayList<String>()
+        val positions = CopyOnWriteArrayList<Int>()
+        val output = FakeAudioOutput(autoAdvanceOnPlay = false)
+        val totalBurstBytes = (44_100 + 44_100) * PcmStreamPolicy.BYTES_PER_FRAME
+
+        val player =
+            PcmStreamPlayer(
+                object : PcmStreamTransport {
+                    override fun open(url: String): PcmStreamResponse =
+                        TwoBurstResponse(burst1Delivered, allowBurst2)
+                }
+            ) {
+                output
+            }
+
+        try {
+            player.play("http://gateway.example/two-bursts", 0, true) { state, pos, _ ->
+                states += state
+                positions += pos
+                if (state == "ENDED") ended.countDown()
+            }
+
+            assertTrue("Burst 1 was not delivered", burst1Delivered.await(2, TimeUnit.SECONDS))
+            val writeDeadline = System.currentTimeMillis() + 1000
+            while (
+                output.totalWrittenBytes < 44_100 * PcmStreamPolicy.BYTES_PER_FRAME &&
+                    System.currentTimeMillis() < writeDeadline
+            ) {
+                Thread.sleep(10)
+            }
+
+            // Burst 1 (1.0s = 176,400 bytes) queued into stopped output without playing.
+            assertEquals(44_100 * PcmStreamPolicy.BYTES_PER_FRAME, output.totalWrittenBytes)
+            assertEquals(0, output.playCount)
+            assertFalse(output.isPlaying)
+            assertFalse("Must not emit PLAYING before threshold", states.contains("PLAYING"))
+            assertTrue(positions.all { it == 0 })
+
+            // Allow Burst 2 to deliver and cross the 1100ms threshold (194,040 bytes).
+            allowBurst2.countDown()
+            val playDeadline = System.currentTimeMillis() + 2000
+            while (output.playCount == 0 && System.currentTimeMillis() < playDeadline) {
+                Thread.sleep(10)
+            }
+
+            assertEquals(1, output.playCount)
+            assertTrue(output.isPlaying)
+            assertTrue(
+                "Must queue at least 1100ms before starting playback",
+                output.bytesQueuedAtPlay >= PcmStreamPolicy.STARTUP_PREFILL_BYTES,
+            )
+
+            // Even though output started, head has not moved, so no PLAYING or position advance.
+            assertEquals(0, output.playbackHeadPosition())
+            assertFalse(
+                "Must not emit PLAYING before actual head movement",
+                states.contains("PLAYING"),
+            )
+            assertTrue(positions.all { it == 0 })
+
+            // Wait until all burst2 bytes are enqueued before advancing the head; this prevents
+            // advanceHead() from racing with remaining burst2 writes that could undercount frames.
+            val enqueueDeadline = System.currentTimeMillis() + 2000
+            while (
+                output.totalWrittenBytes < totalBurstBytes &&
+                    System.currentTimeMillis() < enqueueDeadline
+            ) {
+                Thread.sleep(10)
+            }
+            assertEquals(
+                "All burst bytes must be enqueued before head advance",
+                totalBurstBytes,
+                output.totalWrittenBytes,
+            )
+
+            // Simulate playback head advancement.
+            output.advanceHead()
+
+            assertTrue("Playback did not finish", ended.await(3, TimeUnit.SECONDS))
+            assertTrue("Must emit PLAYING once head advances", states.contains("PLAYING"))
+            assertTrue("Position must advance", positions.any { it > 0 })
+            assertEquals("ENDED", states.last())
+        } finally {
+            allowBurst2.countDown()
+            player.close()
+        }
+    }
+
+    @Test
+    fun shortFiniteStreamStartsQueuedAudioOnCleanEofAndDrains() {
+        val ended = CountDownLatch(1)
+        val states = CopyOnWriteArrayList<String>()
+        val output = FakeAudioOutput(autoAdvanceOnPlay = true)
+        val shortPayload = ByteArray(2_205 * PcmStreamPolicy.BYTES_PER_FRAME) // 50ms of audio
+
+        val player =
+            PcmStreamPlayer(
+                object : PcmStreamTransport {
+                    override fun open(url: String): PcmStreamResponse =
+                        PayloadResponse(shortPayload)
+                }
+            ) {
+                output
+            }
+
+        try {
+            player.play("http://gateway.example/short-finite", 0, true) { state, _, _ ->
+                states += state
+                if (state == "ENDED") ended.countDown()
+            }
+
+            assertTrue("Short finite stream did not drain on EOF", ended.await(2, TimeUnit.SECONDS))
+            assertEquals(1, output.playCount)
+            assertEquals(shortPayload.size, output.bytesQueuedAtPlay)
+            assertTrue(states.contains("PLAYING"))
+            assertEquals("ENDED", states.last())
+        } finally {
+            player.close()
+        }
+    }
+
+    @Test
+    fun zeroByteEofDoesNotStartEmptyOutput() {
+        val ended = CountDownLatch(1)
+        val states = CopyOnWriteArrayList<String>()
+        val output = FakeAudioOutput(autoAdvanceOnPlay = true)
+
+        val player =
+            PcmStreamPlayer(
+                object : PcmStreamTransport {
+                    override fun open(url: String): PcmStreamResponse =
+                        PayloadResponse(ByteArray(0))
+                }
+            ) {
+                output
+            }
+
+        try {
+            player.play("http://gateway.example/zero-byte", 0, true) { state, _, _ ->
+                states += state
+                if (state == "ENDED") ended.countDown()
+            }
+
+            assertTrue("Zero-byte stream did not end", ended.await(2, TimeUnit.SECONDS))
+            assertEquals(0, output.playCount)
+            assertFalse(output.isPlaying)
+            assertFalse(states.contains("PLAYING"))
+            assertEquals("ENDED", states.last())
+        } finally {
+            player.close()
+        }
+    }
+
+    @Test
+    fun partialPrefillStartsOnSocketTimeoutWhileEmptyTimeoutDoesNotStart() {
+        val ended = CountDownLatch(1)
+        val emptyTimeoutsDone = CountDownLatch(1)
+        val allowPayload = CountDownLatch(1)
+        val states = CopyOnWriteArrayList<String>()
+        val output = FakeAudioOutput(autoAdvanceOnPlay = true)
+        val partialPayload = ByteArray(4_410 * PcmStreamPolicy.BYTES_PER_FRAME) // 100ms < 1100ms
+
+        val player =
+            PcmStreamPlayer(
+                object : PcmStreamTransport {
+                    override fun open(url: String): PcmStreamResponse =
+                        EmptyThenPartialTimeoutResponse(
+                            partialPayload,
+                            emptyTimeoutsDone,
+                            allowPayload,
+                        )
+                }
+            ) {
+                output
+            }
+
+        try {
+            player.play("http://gateway.example/timeout-flush", 0, true) { state, _, _ ->
+                states += state
+                if (state == "ENDED") ended.countDown()
+            }
+
+            // Verify that the two initial empty-socket-timeouts (no bytes written yet) do NOT
+            // trigger output.play(); the output must stay silent until payload is written and then
+            // the tail timeout flushes the partial prefill. The worker is held at the payload gate
+            // so these assertions are deterministic.
+            assertTrue("Empty timeouts did not fire", emptyTimeoutsDone.await(3, TimeUnit.SECONDS))
+            assertEquals("Output must not start during empty-timeout phase", 0, output.playCount)
+            assertFalse("Output must not be playing during empty-timeout phase", output.isPlaying)
+
+            // Release the worker to deliver the payload and finish.
+            allowPayload.countDown()
+
+            assertTrue("Stream did not recover and complete", ended.await(3, TimeUnit.SECONDS))
+            assertEquals(1, output.playCount)
+            assertEquals(partialPayload.size, output.bytesQueuedAtPlay)
+            assertTrue(states.contains("PLAYING"))
+            assertEquals("ENDED", states.last())
+        } finally {
+            allowPayload.countDown()
+            player.close()
+        }
+    }
+
+    @Test
+    fun pauseAndResumeBeforePrefillDoesNotBypassStartupPrefill() {
+        val firstChunkWritten = CountDownLatch(1)
+        val allowSecondChunk = CountDownLatch(1)
+        val ended = CountDownLatch(1)
+        val states = CopyOnWriteArrayList<String>()
+        val output = FakeAudioOutput(autoAdvanceOnPlay = true)
+
+        val player =
+            PcmStreamPlayer(
+                object : PcmStreamTransport {
+                    override fun open(url: String): PcmStreamResponse =
+                        GatedChunksResponse(
+                            chunk1Size = 4_410 * PcmStreamPolicy.BYTES_PER_FRAME, // 100ms
+                            chunk2Size =
+                                50_000 * PcmStreamPolicy.BYTES_PER_FRAME, // crosses threshold
+                            chunk1Written = firstChunkWritten,
+                            allowChunk2 = allowSecondChunk,
+                        )
+                }
+            ) {
+                output
+            }
+
+        try {
+            player.play("http://gateway.example/pause-resume", 0, true) { state, _, _ ->
+                states += state
+                if (state == "ENDED") ended.countDown()
+            }
+
+            assertTrue("First chunk was not written", firstChunkWritten.await(2, TimeUnit.SECONDS))
+            assertEquals(0, output.playCount)
+
+            // Pause while prefill is incomplete
+            player.pause()
+            val pauseDeadline = System.currentTimeMillis() + 1000
+            while (!states.contains("PAUSED") && System.currentTimeMillis() < pauseDeadline) {
+                Thread.sleep(10)
+            }
+            assertTrue("Must report PAUSED", states.contains("PAUSED"))
+
+            // Resume while prefill is incomplete: must NOT start output
+            player.resume()
+            val resumeDeadline = System.currentTimeMillis() + 1000
+            while (states.last() != "BUFFERING" && System.currentTimeMillis() < resumeDeadline) {
+                Thread.sleep(10)
+            }
+            assertEquals(0, output.playCount)
+            assertFalse(output.isPlaying)
+
+            // Release second chunk to cross threshold
+            allowSecondChunk.countDown()
+
+            assertTrue("Stream did not finish after resume", ended.await(3, TimeUnit.SECONDS))
+            assertEquals(1, output.playCount)
+            assertTrue(states.contains("PLAYING"))
+            assertEquals("ENDED", states.last())
+        } finally {
+            allowSecondChunk.countDown()
+            player.close()
+        }
+    }
+
+    @Test
+    fun partialWritesAndFrameCarryAcrossChunkBoundaries() {
+        val ended = CountDownLatch(1)
+        val states = CopyOnWriteArrayList<String>()
+        val output = FakeAudioOutput(autoAdvanceOnPlay = true, writeSliceSize = 4)
+
+        val player =
+            PcmStreamPlayer(
+                object : PcmStreamTransport {
+                    override fun open(url: String): PcmStreamResponse =
+                        FragmentedResponse(listOf(ByteArray(5), ByteArray(7), ByteArray(4)))
+                }
+            ) {
+                output
+            }
+
+        try {
+            player.play("http://gateway.example/fragmented", 0, true) { state, _, _ ->
+                states += state
+                if (state == "ENDED") ended.countDown()
+            }
+
+            assertTrue(
+                "Fragmented stream did not complete cleanly",
+                ended.await(2, TimeUnit.SECONDS),
+            )
+            assertEquals(16, output.totalWrittenBytes)
+            assertEquals("ENDED", states.last())
+        } finally {
+            player.close()
+        }
+    }
+
+    @Test
+    fun incompleteFrameAtEofFails() {
+        val failed = CountDownLatch(1)
+        val states = CopyOnWriteArrayList<String>()
+        val output = FakeAudioOutput(autoAdvanceOnPlay = true)
+
+        val player =
+            PcmStreamPlayer(
+                object : PcmStreamTransport {
+                    override fun open(url: String): PcmStreamResponse =
+                        FragmentedResponse(listOf(ByteArray(5)))
+                }
+            ) {
+                output
+            }
+
+        try {
+            player.play("http://gateway.example/incomplete", 0, true) { state, _, _ ->
+                states += state
+                if (state == "FAILED") failed.countDown()
+            }
+
+            assertTrue("Incomplete frame did not fail at EOF", failed.await(2, TimeUnit.SECONDS))
+            assertTrue(states.contains("FAILED"))
+        } finally {
+            player.close()
+        }
+    }
+
+    @Test
+    fun audioOutputWriteExceedingRequestedBytesFailsAndReleasesWithoutStarting() {
+        val failed = CountDownLatch(1)
+        val released = CountDownLatch(1)
+        val states = CopyOnWriteArrayList<String>()
+        // Payload: one full frame so write() is called at least once before the overrun is
+        // detected.
+        val payload = ByteArray(PcmStreamPolicy.BYTES_PER_FRAME)
+
+        val player =
+            PcmStreamPlayer(
+                object : PcmStreamTransport {
+                    override fun open(url: String): PcmStreamResponse = PayloadResponse(payload)
+                }
+            ) {
+                // Faulty output: write() returns requested + one extra frame (overrun).
+                OverrunWriteOutput { released.countDown() }
+            }
+
+        try {
+            player.play("http://gateway.example/overrun-write", 0, true) { state, _, _ ->
+                states += state
+                if (state == "FAILED") failed.countDown()
+            }
+
+            assertTrue("Overrun write did not report FAILED", failed.await(2, TimeUnit.SECONDS))
+            assertTrue(
+                "Output was not released after overrun failure",
+                released.await(2, TimeUnit.SECONDS),
+            )
+            assertTrue(states.contains("FAILED"))
+            // Output must not have been started (play() never called) and must not be playing.
+            assertFalse(
+                "Output must not be playing after overrun failure",
+                states.contains("PLAYING"),
+            )
+        } finally {
+            player.close()
+        }
+    }
+
+    @Test
+    fun cancellationDuringPrefillReleasesOutputImmediately() {
+        val readingStarted = CountDownLatch(1)
+        val outputReleased = CountDownLatch(1)
+        val blockedResponse = BlockingResponse(readingStarted, CountDownLatch(1))
+
+        val player =
+            PcmStreamPlayer(
+                object : PcmStreamTransport {
+                    override fun open(url: String): PcmStreamResponse = blockedResponse
+                }
+            ) {
+                FakeAudioOutput(released = { outputReleased.countDown() })
+            }
+
+        try {
+            player.play("http://gateway.example/cancel-prefill", 0, true) { _, _, _ -> }
+            assertTrue("Prefill read did not start", readingStarted.await(2, TimeUnit.SECONDS))
+
+            player.stop()
+
+            assertTrue(
+                "Output was not released on cancellation",
+                outputReleased.await(2, TimeUnit.SECONDS),
+            )
+        } finally {
+            player.close()
+        }
+    }
+
     private class BlockingResponse(
         private val reading: CountDownLatch,
         private val closed: CountDownLatch,
@@ -317,6 +737,135 @@ class PcmStreamPlayerTest {
         override fun close() = Unit
     }
 
+    private class TwoBurstResponse(
+        private val burst1Delivered: CountDownLatch,
+        private val allowBurst2: CountDownLatch,
+    ) : PcmStreamResponse {
+        override val statusCode = 200
+        override val contentType = PcmStreamPolicy.MIME_TYPE
+        private val burst1 = ByteArray(44_100 * PcmStreamPolicy.BYTES_PER_FRAME)
+        private val burst2 = ByteArray(44_100 * PcmStreamPolicy.BYTES_PER_FRAME)
+        private var offset1 = 0
+        private var offset2 = 0
+        private var burst1Signalled = false
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (offset1 < burst1.size) {
+                val count = minOf(length, burst1.size - offset1)
+                burst1.copyInto(buffer, offset, offset1, offset1 + count)
+                offset1 += count
+                if (offset1 == burst1.size && !burst1Signalled) {
+                    burst1Signalled = true
+                    burst1Delivered.countDown()
+                }
+                return count
+            }
+            if (!allowBurst2.await(2, TimeUnit.SECONDS)) throw IOException("Burst 2 timed out")
+            if (offset2 < burst2.size) {
+                val count = minOf(length, burst2.size - offset2)
+                burst2.copyInto(buffer, offset, offset2, offset2 + count)
+                offset2 += count
+                return count
+            }
+            return -1
+        }
+
+        override fun close() = Unit
+    }
+
+    private class EmptyThenPartialTimeoutResponse(
+        private val payload: ByteArray,
+        private val emptyTimeoutsDone: CountDownLatch = CountDownLatch(1),
+        private val allowPayload: CountDownLatch = CountDownLatch(0),
+    ) : PcmStreamResponse {
+        override val statusCode = 200
+        override val contentType = PcmStreamPolicy.MIME_TYPE
+        private var emptyTimeouts = 0
+        private var deliveredOffset = 0
+        private var flushedTimeout = false
+        private var payloadGateOpened = false
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (emptyTimeouts < 2) {
+                emptyTimeouts++
+                if (emptyTimeouts == 2) emptyTimeoutsDone.countDown()
+                throw SocketTimeoutException("empty timeout fixture")
+            }
+            if (!payloadGateOpened) {
+                payloadGateOpened = true
+                if (!allowPayload.await(3, TimeUnit.SECONDS))
+                    throw IOException("payload gate timed out")
+            }
+            if (deliveredOffset < payload.size) {
+                val count = minOf(payload.size - deliveredOffset, length)
+                payload.copyInto(buffer, offset, deliveredOffset, deliveredOffset + count)
+                deliveredOffset += count
+                return count
+            }
+            if (!flushedTimeout) {
+                flushedTimeout = true
+                throw SocketTimeoutException("tail timeout fixture")
+            }
+            return -1
+        }
+
+        override fun close() = Unit
+    }
+
+    private class GatedChunksResponse(
+        chunk1Size: Int,
+        chunk2Size: Int,
+        private val chunk1Written: CountDownLatch,
+        private val allowChunk2: CountDownLatch,
+    ) : PcmStreamResponse {
+        override val statusCode = 200
+        override val contentType = PcmStreamPolicy.MIME_TYPE
+        private val chunk1 = ByteArray(chunk1Size)
+        private val chunk2 = ByteArray(chunk2Size)
+        private var offset1 = 0
+        private var offset2 = 0
+        private var chunk1Signalled = false
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (offset1 < chunk1.size) {
+                val count = minOf(length, chunk1.size - offset1)
+                chunk1.copyInto(buffer, offset, offset1, offset1 + count)
+                offset1 += count
+                if (offset1 == chunk1.size && !chunk1Signalled) {
+                    chunk1Signalled = true
+                    chunk1Written.countDown()
+                }
+                return count
+            }
+            if (!allowChunk2.await(2, TimeUnit.SECONDS)) throw IOException("Chunk 2 timed out")
+            if (offset2 < chunk2.size) {
+                val count = minOf(length, chunk2.size - offset2)
+                chunk2.copyInto(buffer, offset, offset2, offset2 + count)
+                offset2 += count
+                return count
+            }
+            return -1
+        }
+
+        override fun close() = Unit
+    }
+
+    private class FragmentedResponse(private val chunks: List<ByteArray>) : PcmStreamResponse {
+        override val statusCode = 200
+        override val contentType = PcmStreamPolicy.MIME_TYPE
+        private var index = 0
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (index >= chunks.size) return -1
+            val chunk = chunks[index++]
+            val count = minOf(chunk.size, length)
+            chunk.copyInto(buffer, offset, 0, count)
+            return count
+        }
+
+        override fun close() = Unit
+    }
+
     private class DelayedAudioOutput(private val wrote: CountDownLatch) : PcmAudioOutput {
         private var head = 0
         private var pendingFrames = 0
@@ -344,20 +893,101 @@ class PcmStreamPlayerTest {
         override fun release() = Unit
     }
 
-    private class FakeAudioOutput(private val released: () -> Unit) : PcmAudioOutput {
+    private class FakeAudioOutput(
+        private val autoAdvanceOnPlay: Boolean = true,
+        private val writeSliceSize: Int? = null,
+        private val released: () -> Unit = {},
+    ) : PcmAudioOutput {
+        constructor(
+            released: () -> Unit
+        ) : this(autoAdvanceOnPlay = true, writeSliceSize = null, released = released)
+
+        @Volatile
+        var playCount = 0
+            private set
+
+        @Volatile
+        var isPlaying = false
+            private set
+
+        @Volatile
+        var totalWrittenBytes = 0
+            private set
+
+        @Volatile
+        var bytesQueuedAtPlay = 0
+            private set
+
         private var head = 0
+        private var pendingFrames = 0
+        private val closed = AtomicBoolean(false)
+        private val lock = Any()
+
+        override fun play() {
+            synchronized(lock) {
+                isPlaying = true
+                playCount++
+                if (bytesQueuedAtPlay == 0 && totalWrittenBytes > 0) {
+                    bytesQueuedAtPlay = totalWrittenBytes
+                }
+                if (autoAdvanceOnPlay) {
+                    head += pendingFrames
+                    pendingFrames = 0
+                }
+            }
+        }
+
+        override fun pause() {
+            synchronized(lock) { isPlaying = false }
+        }
+
+        override fun write(buffer: ByteArray, offset: Int, length: Int): Int {
+            val toWrite = if (writeSliceSize != null) minOf(length, writeSliceSize) else length
+            val frames = toWrite / PcmStreamPolicy.BYTES_PER_FRAME
+            synchronized(lock) {
+                totalWrittenBytes += toWrite
+                if (isPlaying && autoAdvanceOnPlay) {
+                    head += frames
+                } else {
+                    pendingFrames += frames
+                }
+            }
+            return toWrite
+        }
+
+        override fun playbackHeadPosition(): Int = synchronized(lock) { head }
+
+        override fun volume(gain: Float): Boolean = true
+
+        fun advanceHead(frames: Int? = null) {
+            synchronized(lock) {
+                val count = if (frames != null) minOf(frames, pendingFrames) else pendingFrames
+                head += count
+                pendingFrames -= count
+            }
+        }
+
+        override fun stop() {
+            synchronized(lock) { isPlaying = false }
+        }
+
+        override fun release() {
+            if (closed.compareAndSet(false, true)) released()
+        }
+    }
+
+    /** Faulty output whose write() returns requested + one extra frame, triggering overrun. */
+    private class OverrunWriteOutput(private val released: () -> Unit) : PcmAudioOutput {
         private val closed = AtomicBoolean(false)
 
         override fun play() = Unit
 
         override fun pause() = Unit
 
-        override fun write(buffer: ByteArray, offset: Int, length: Int): Int {
-            head += length / PcmStreamPolicy.BYTES_PER_FRAME
-            return length
-        }
+        override fun write(buffer: ByteArray, offset: Int, length: Int): Int =
+            length + PcmStreamPolicy.BYTES_PER_FRAME
 
-        override fun playbackHeadPosition(): Int = head
+        override fun playbackHeadPosition(): Int = 0
 
         override fun volume(gain: Float): Boolean = true
 
