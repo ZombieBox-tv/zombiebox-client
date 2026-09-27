@@ -565,7 +565,13 @@ class MainActivity : Activity() {
                     } else {
                         measured?.durationMs ?: localAudioDurationMs
                     }
-                renderPlaybackProgress(displayedStatus, displayedPosition, displayedDuration)
+                renderPlaybackProgress(
+                    displayedStatus,
+                    displayedPosition,
+                    displayedDuration,
+                    authoritativeReceiverState =
+                        incomingAudio && shouldApplyAuthoritativeAirplayState(displayedStatus),
+                )
             }
         audioController = player
         player.configure(api.base, api.device, api.token)
@@ -972,7 +978,12 @@ class MainActivity : Activity() {
         AirPlayPairingDialog(this, model).show()
     }
 
-    private fun renderPlaybackProgress(status: String, positionMs: Int, durationMs: Int) {
+    private fun renderPlaybackProgress(
+        status: String,
+        positionMs: Int,
+        durationMs: Int,
+        authoritativeReceiverState: Boolean = false,
+    ) {
         val previousState = lastState
         lastPosition = positionMs.coerceAtLeast(0)
         lastDuration = durationMs.coerceAtLeast(0)
@@ -987,7 +998,14 @@ class MainActivity : Activity() {
                 ui.formatTime(lastDuration),
             )
         if (::playerChrome.isInitialized) {
-            if (playerChrome.updateProgress(status, lastPosition, lastDuration)) {
+            if (
+                playerChrome.updateProgress(
+                    status,
+                    lastPosition,
+                    lastDuration,
+                    authoritativeReceiverState,
+                )
+            ) {
                 playerFocus.rebuild(playerChrome.focusRows(), false)
             }
         }
@@ -1067,6 +1085,13 @@ class MainActivity : Activity() {
         } else {
             null
         }
+
+    private fun shouldApplyAuthoritativeAirplayState(status: String): Boolean {
+        if (!isIncomingAirplayAudioSession()) return false
+        val pendingTarget =
+            pendingAirplayToggleTarget.takeIf { pendingAirplayToggleSession == session }
+        return ReceiverTimelinePolicy.shouldApplyAuthoritativeUiState(status, pendingTarget)
+    }
 
     private fun receiverTimelineItemKey(item: MediaItem?): String {
         item ?: return ""
@@ -1187,6 +1212,7 @@ class MainActivity : Activity() {
                 else measured?.positionMs ?: localAudioPositionMs,
                 if (localOutputPaused) localPauseDurationMs
                 else measured?.durationMs ?: localAudioDurationMs,
+                authoritativeReceiverState = shouldApplyAuthoritativeAirplayState(displayedStatus),
             )
         }
     }

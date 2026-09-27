@@ -1227,7 +1227,12 @@ class TvPlayerChromeView(
         audioStopButton.setBackgroundDrawable(controlBackground(accentColor))
     }
 
-    fun updateProgress(status: String, positionMs: Int, durationMs: Int): Boolean {
+    fun updateProgress(
+        status: String,
+        positionMs: Int,
+        durationMs: Int,
+        authoritativeReceiverState: Boolean = false,
+    ): Boolean {
         val wasPlaying = isPlaying
         videoDurationMs = durationMs
         val timelineFocusChanged = updateTimelineAvailability()
@@ -1247,6 +1252,10 @@ class TvPlayerChromeView(
         audioProgressBar.setProgress(positionMs, durationMs)
 
         val realPlaying = status == "PLAYING" || status == "BUFFERING"
+
+        if (authoritativeReceiverState && status in listOf("PLAYING", "PAUSED")) {
+            optimisticTargetPlaying = null
+        }
 
         if (status in listOf("ENDED", "STOPPED", "FAILED")) {
             optimisticTargetPlaying = null

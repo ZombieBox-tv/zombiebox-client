@@ -56,6 +56,32 @@ class ArtworkBindingPolicyTest {
         assertNull(base.copy(title = " ").artworkIdentity())
     }
 
+    @Test
+    fun sameAirPlayTrackKeepsCoverWhenResumeTemporarilyOmitsArtworkUrl() {
+        val beforeResume =
+            MediaItem(
+                id = "airplay-audio",
+                provider = "airplay",
+                title = "Still Feel.",
+                subtitle = "half•alive",
+                description = "Conditions of a Punk",
+                imageUrl = "/v1/artwork/current",
+                kind = "audio",
+            )
+        val resumed = beforeResume.copy(imageUrl = "")
+
+        assertEquals(beforeResume.artworkIdentity(), resumed.artworkIdentity())
+        assertTrue(
+            ArtworkBindingPolicy.canRetainCurrentImage(
+                hasCurrentImage = true,
+                currentIdentity = beforeResume.artworkIdentity(),
+                nextIdentity = resumed.artworkIdentity(),
+                currentScopeRevision = 7L,
+                nextScopeRevision = 7L,
+            )
+        )
+    }
+
     private fun canRetain(hasImage: Boolean, current: String?, next: String?): Boolean =
         ArtworkBindingPolicy.canRetainCurrentImage(
             hasCurrentImage = hasImage,

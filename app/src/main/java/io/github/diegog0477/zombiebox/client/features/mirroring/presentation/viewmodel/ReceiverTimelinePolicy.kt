@@ -24,7 +24,6 @@ object ReceiverTimelinePolicy {
         val correctionMs: Long = 0L,
         val correctionStartedAtMs: Long = 0L,
         val correctionDurationMs: Long = 0L,
-        val pendingPausedPositionMs: Long? = null,
     )
 
     data class Position(
@@ -43,6 +42,14 @@ object ReceiverTimelinePolicy {
             "PAUSED" -> true
             else -> null
         }
+
+    /** Stable receiver reports replace stale optimistic UI unless a local toggle is pending. */
+    fun shouldApplyAuthoritativeUiState(
+        reportedState: String,
+        pendingCommandTarget: String?,
+    ): Boolean =
+        reportedState in listOf("PLAYING", "PAUSED") &&
+            (pendingCommandTarget.isNullOrEmpty() || pendingCommandTarget == reportedState)
 
     fun observe(
         previous: State,
@@ -94,8 +101,6 @@ object ReceiverTimelinePolicy {
                 playbackState = playbackState,
                 locallyPaused = locallyPaused,
                 senderPositionKnown = false,
-                pendingPausedPositionMs =
-                    previous.pendingPausedPositionMs.takeIf { playbackState == "PAUSED" },
                 correctionMs = 0L,
                 correctionStartedAtMs = nowElapsedRealtimeMs,
                 correctionDurationMs = 0L,
@@ -149,45 +154,9 @@ object ReceiverTimelinePolicy {
         }
 
         if (playbackState != "PLAYING") {
-            // A repeated paused sample may itself be stale. Treat only a material
-            // change while paused as a sender seek; otherwise keep the last
-            // advancing estimate until the sender reports a nearby position.
-            val senderSoughtWhilePaused =
-                playbackState == "PAUSED" &&
-                    previous.playbackState == "PAUSED" &&
-                    previous.pendingPausedPositionMs?.let { pendingPosition ->
-                        kotlin.math.abs(samplePosition - pendingPosition) >= HARD_RESYNC_LIMIT_MS
-                    } == true
-            val hasMaterialPauseConflict =
-                playbackState == "PAUSED" &&
-                    kotlin.math.abs(samplePosition - currentPosition.toLong()) >=
-                        HARD_RESYNC_LIMIT_MS
-            val holdUnconfirmedPausePosition =
-                !locallyPaused &&
-                    hasMaterialPauseConflict &&
-                    !senderSoughtWhilePaused &&
-                    (previous.playbackState == "PLAYING" ||
-                        previous.pendingPausedPositionMs != null)
-
-            if (holdUnconfirmedPausePosition) {
-                return State(
-                    sessionId = sessionId,
-                    itemKey = itemKey,
-                    reportedPositionMs = senderPositionMs,
-                    reportedSampleAgeMs = senderPositionAgeMs,
-                    sampleObservedElapsedRealtimeMs = nowElapsedRealtimeMs,
-                    hasAnchor = true,
-                    anchorPositionMs = currentPosition.toLong(),
-                    anchorElapsedRealtimeMs = nowElapsedRealtimeMs,
-                    senderSampleElapsedRealtimeMs =
-                        (nowElapsedRealtimeMs - ageMs).coerceAtLeast(0L),
-                    durationMs = duration,
-                    playbackState = playbackState,
-                    senderPositionKnown = false,
-                    pendingPausedPositionMs = samplePosition,
-                )
-            }
-
+            // A fresh receiver pause is authoritative. The local stream may have buffered past
+            // the sender's stopped position, so retaining the prior estimate can leave the UI
+            // seconds ahead indefinitely even when later paused samples agree.
             return State(
                 sessionId = sessionId,
                 itemKey = itemKey,
