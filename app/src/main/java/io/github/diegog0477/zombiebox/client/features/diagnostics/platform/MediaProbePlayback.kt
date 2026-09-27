@@ -13,6 +13,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
+import org.json.JSONObject
 
 /** API9 calls only. Completion and advancement are evidence, prepare alone is not. */
 class MediaProbePlayback : ProbePlayback {
@@ -44,9 +45,11 @@ class MediaProbePlayback : ProbePlayback {
             val media = MediaPlayer()
             player = media
             var finished = false
+            var finalizing = false
             var operationStarted = false
             val initialFrames = textureFrames()
-            var operationComplete = asset.kind in listOf("playback", "hls", "texture-output")
+            var operationComplete =
+                asset.kind in listOf("playback", "hls", "hls-event", "texture-output")
             var operationPosition = 0
             var advancedAfterOperation = false
             fun finish(
@@ -74,7 +77,7 @@ class MediaProbePlayback : ProbePlayback {
             val tick =
                 object : Runnable {
                     override fun run() {
-                        if (finished || run != generation) return
+                        if (finished || finalizing || run != generation) return
                         try {
                             val current = media.currentPosition
                             positionMs = maxOf(positionMs, current)
@@ -224,6 +227,28 @@ class MediaProbePlayback : ProbePlayback {
                     }
                 }
                 media.setOnCompletionListener {
+                    if (asset.kind == "hls-event") {
+                        if (finished || finalizing || run != generation)
+                            return@setOnCompletionListener
+                        finalizing = true
+                        val finalPosition = positionMs
+                        Thread {
+                                val evidence = readHlsEventEvidence(asset.evidenceUrl, asset.id)
+                                handler.post {
+                                    if (finished || run != generation) return@post
+                                    val verdict =
+                                        HlsEventProbePolicy.evaluate(finalPosition, evidence)
+                                    finish(
+                                        verdict.status,
+                                        completed = true,
+                                        detail = verdict.detail,
+                                    )
+                                }
+                            }
+                            .also { it.isDaemon = true }
+                            .start()
+                        return@setOnCompletionListener
+                    }
                     val passed =
                         operationComplete &&
                             advancedAfterOperation &&
@@ -239,7 +264,7 @@ class MediaProbePlayback : ProbePlayback {
                     finish(if (passed) "PASS" else "UNKNOWN", completed = true, detail = detail)
                 }
                 media.setOnErrorListener { _, what, extra ->
-                    if (finished || run != generation) return@setOnErrorListener true
+                    if (finished || finalizing || run != generation) return@setOnErrorListener true
                     val stageStr =
                         when (stage) {
                             ProbeStage.PREPARING -> "prepare"
@@ -302,7 +327,7 @@ class MediaProbePlayback : ProbePlayback {
                             )
                         }
                     },
-                    12000,
+                    if (asset.kind == "hls-event") 45000 else 12000,
                 )
             } catch (e: Exception) {
                 val exBase = "exception:${e.javaClass.simpleName}@prepare"
@@ -349,6 +374,66 @@ class MediaProbePlayback : ProbePlayback {
     }
 
     companion object {
+        private fun readHlsEventEvidence(
+            urlStr: String,
+            expectedProbeId: String,
+        ): HlsEventProbePolicy.Evidence? {
+            if (!urlStr.startsWith("http://") && !urlStr.startsWith("https://")) return null
+            val connection =
+                try {
+                    (URL(urlStr).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 2000
+                        readTimeout = 2000
+                        instanceFollowRedirects = false
+                    }
+                } catch (_: Exception) {
+                    return null
+                }
+            return try {
+                if (connection.responseCode != 200) return null
+                val buffer = ByteArray(4097)
+                var count = 0
+                var complete = false
+                val deadline = SystemClock.elapsedRealtime() + 4000
+                connection.inputStream.use { input ->
+                    while (count < buffer.size && SystemClock.elapsedRealtime() < deadline) {
+                        val read = input.read(buffer, count, buffer.size - count)
+                        if (read < 0) {
+                            complete = true
+                            break
+                        }
+                        if (read == 0) break
+                        count += read
+                    }
+                }
+                if (!complete || count == buffer.size) return null
+                val data = JSONObject(String(buffer, 0, count, Charsets.UTF_8))
+                if (
+                    data.optInt("apiVersion") != 1 ||
+                        data.optString("probeId") != expectedProbeId ||
+                        data.optString("runId").isEmpty()
+                )
+                    return null
+                val indexes = data.optJSONArray("deliveredSegmentIndexes") ?: return null
+                if (indexes.length() > 7) return null
+                HlsEventProbePolicy.Evidence(
+                    started = data.optBoolean("started"),
+                    initialSegmentCount = data.optInt("initialSegmentCount", -1),
+                    publishedSegmentCount = data.optInt("publishedSegmentCount", -1),
+                    laterPlaylistReloadObserved = data.optBoolean("laterPlaylistReloadObserved"),
+                    laterSegmentDeliveryObserved = data.optBoolean("laterSegmentDeliveryObserved"),
+                    deliveredSegmentIndexes =
+                        (0 until indexes.length()).map { indexes.optInt(it, -1) },
+                    publicationComplete = data.optBoolean("publicationComplete"),
+                )
+            } catch (_: Exception) {
+                null
+            } finally {
+                connection.disconnect()
+            }
+        }
+
         fun probeHttpEvidence(urlStr: String, timeoutMs: Int = 2000): String {
             if (!urlStr.startsWith("http://") && !urlStr.startsWith("https://")) return ""
             return try {

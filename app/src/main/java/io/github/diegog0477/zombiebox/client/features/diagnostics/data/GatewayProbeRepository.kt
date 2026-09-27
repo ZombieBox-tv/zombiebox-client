@@ -50,12 +50,18 @@ class GatewayProbeRepository(
                 val item = data.getJSONObject(it)
                 val path = item.getString("url")
                 require(path.startsWith("/v1/probes/") && !path.contains(".."))
+                val evidencePath = item.optString("evidenceUrl")
+                require(
+                    evidencePath.isEmpty() ||
+                        (evidencePath.startsWith("/v1/probes/") && !evidencePath.contains(".."))
+                )
                 ProbeAsset(
                     item.getString("id"),
                     api.base + path,
                     item.getBoolean("video"),
                     item.optString("kind", "playback"),
                     item.optString("requires"),
+                    if (evidencePath.isEmpty()) "" else api.base + evidencePath,
                 )
             }
         val texture =
