@@ -151,7 +151,6 @@ class CompanionController(
 
     private fun showConsent(request: PairingRequest) {
         if (!activity.hasWindowFocus() && invitation == null) return
-        var decided = false
         val form = ui.column().apply { setPadding(ui.dp(20), ui.dp(12), ui.dp(20), ui.dp(12)) }
         form.addView(
             ui.text(
@@ -169,19 +168,33 @@ class CompanionController(
             AlertDialog.Builder(activity)
                 .setTitle(R.string.phone_pair_accept_title)
                 .setView(form)
-                .setPositiveButton(R.string.phone_allow) { _, _ ->
-                    decided = true
-                    model.decide(request.id, true, error)
-                }
-                .setNegativeButton(R.string.phone_deny) { _, _ ->
-                    decided = true
-                    model.decide(request.id, false, error, ignore.isChecked)
-                }
+                .setPositiveButton(R.string.phone_allow, null)
+                .setNegativeButton(R.string.phone_deny, null)
                 .create()
         consent = dialog
-        dialog.setOnDismissListener {
-            consent = null
-            if (!decided && !closed) model.decide(request.id, false, error, ignore.isChecked)
+        dialog.setOnDismissListener { consent = null }
+        dialog.setOnShowListener {
+            val allow = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            val deny = dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
+            fun decide(accept: Boolean) {
+                allow.isEnabled = false
+                deny.isEnabled = false
+                model.decide(
+                    request.id,
+                    accept,
+                    { failure ->
+                        if (dialog.isShowing) {
+                            allow.isEnabled = true
+                            deny.isEnabled = true
+                        }
+                        error(failure)
+                    },
+                    ignore24h = !accept && ignore.isChecked,
+                    done = { if (dialog.isShowing) dialog.dismiss() },
+                )
+            }
+            allow.setOnClickListener { decide(true) }
+            deny.setOnClickListener { decide(false) }
         }
         dialog.show()
     }

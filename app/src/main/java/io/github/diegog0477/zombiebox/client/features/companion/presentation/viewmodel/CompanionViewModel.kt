@@ -10,7 +10,13 @@ class CompanionViewModel(
     private val now: () -> Long,
     private val scope: () -> String = { "" },
 ) {
+    private data class DecisionKey(val scope: String, val requestId: String)
+
     private var polling = false
+    private var closed = false
+    private var pollGeneration = 0L
+    private val decisionsInFlight = mutableSetOf<DecisionKey>()
+    private val decisionsAwaitingRefresh = mutableMapOf<DecisionKey, Long>()
 
     fun invite(done: (PairingInvitation) -> Unit, failed: (Exception) -> Unit) =
         tasks.run({ repository.invite() }, done, failed)
@@ -23,7 +29,25 @@ class CompanionViewModel(
         accept: Boolean,
         failed: (Exception) -> Unit,
         ignore24h: Boolean = false,
-    ) = tasks.run({ repository.decide(id, accept, ignore24h) }, {}, failed)
+        done: () -> Unit = {},
+    ) {
+        if (closed) return
+        val target = scope()
+        val key = DecisionKey(target, id)
+        if (!decisionsInFlight.add(key)) return
+        tasks.run(
+            { repository.decide(id, accept, ignore24h) },
+            {
+                decisionsInFlight.remove(key)
+                decisionsAwaitingRefresh[key] = pollGeneration + 1
+                done()
+            },
+            { error ->
+                decisionsInFlight.remove(key)
+                failed(error)
+            },
+        )
+    }
 
     fun revoke(id: String, done: () -> Unit, failed: (Exception) -> Unit) =
         tasks.run({ repository.revoke(id) }, { done() }, failed)
@@ -38,6 +62,7 @@ class CompanionViewModel(
         polling = true
         val started = now()
         val target = scope()
+        val generation = ++pollGeneration
         tasks.run(
             { Pair(repository.poll(active, inputId), repository.inventory()) },
             { result ->
@@ -49,7 +74,23 @@ class CompanionViewModel(
                         it.copy(remainingMs = (it.remainingMs - elapsed).coerceAtLeast(0))
                     }
                 )
-                pending(result.second.requests)
+                val requestIds = result.second.requests.mapTo(mutableSetOf()) { it.id }
+                val iterator = decisionsAwaitingRefresh.iterator()
+                while (iterator.hasNext()) {
+                    val (key, refreshGeneration) = iterator.next()
+                    if (
+                        key.scope == target &&
+                            generation >= refreshGeneration &&
+                            key.requestId !in requestIds
+                    )
+                        iterator.remove()
+                }
+                pending(
+                    result.second.requests.filter { request ->
+                        val key = DecisionKey(target, request.id)
+                        key !in decisionsInFlight && key !in decisionsAwaitingRefresh
+                    }
+                )
             },
             { polling = false },
         )
@@ -58,5 +99,8 @@ class CompanionViewModel(
     fun acknowledge(id: String, status: String) =
         tasks.run({ repository.acknowledge(id, status) }, {}, {})
 
-    fun close() = tasks.close()
+    fun close() {
+        closed = true
+        tasks.close()
+    }
 }
