@@ -22,7 +22,14 @@ class GatewayHomeRepository(private val api: GatewayApi) : HomeRepository {
                     "&q=" +
                     URLEncoder.encode(scope.query, "UTF-8"),
             )
-        val modules = api.request("GET", "/v1/modules").optJSONArray("modules") ?: JSONArray()
+        val modulesResponse = api.request("GET", "/v1/modules")
+        val modules = modulesResponse.optJSONArray("modules") ?: JSONArray()
+        val playbackValidationData = modulesResponse.optJSONObject("playbackValidation")
+        val playbackValidation =
+            PlaybackValidationDecoder.decode(
+                playbackValidationData?.optString("status"),
+                playbackValidationData?.optString("reason"),
+            )
         val sections = home.optJSONArray("sections") ?: JSONArray()
         val serviceModules =
             (0 until modules.length()).map {
@@ -56,6 +63,7 @@ class GatewayHomeRepository(private val api: GatewayApi) : HomeRepository {
             home.optInt("nextOffset", -1).takeIf { scope.provider == "youtube" } ?: -1,
             home.optString("feedType") == "zombiebox_activity",
             home.optString("nextCursor"),
+            playbackValidation,
         )
     }
 

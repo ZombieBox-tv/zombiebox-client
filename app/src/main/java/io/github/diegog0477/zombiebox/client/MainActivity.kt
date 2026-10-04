@@ -39,6 +39,7 @@ import io.github.diegog0477.zombiebox.client.features.companion.presentation.vie
 import io.github.diegog0477.zombiebox.client.features.diagnostics.data.GatewayDiagnosticsRepository
 import io.github.diegog0477.zombiebox.client.features.diagnostics.platform.HardwareScanner
 import io.github.diegog0477.zombiebox.client.features.diagnostics.presentation.ui.DiagnosticsDialog
+import io.github.diegog0477.zombiebox.client.features.diagnostics.presentation.ui.ProbesActivity
 import io.github.diegog0477.zombiebox.client.features.diagnostics.presentation.viewmodel.DiagnosticsViewModel
 import io.github.diegog0477.zombiebox.client.features.discovery.presentation.viewmodel.DiscoveryViewModel
 import io.github.diegog0477.zombiebox.client.features.home.data.GatewayHomeRepository
@@ -445,6 +446,7 @@ class MainActivity : Activity() {
     private var localPauseDurationMs = 0
     private var pendingAirplayToggleSession = ""
     private var pendingAirplayToggleTarget = ""
+    private var pendingPlaybackValidationReturnRefresh = false
     @Volatile private var closed = false
     @Volatile private var foreground = false
     private val green
@@ -505,6 +507,10 @@ class MainActivity : Activity() {
                     loadYouTubePage = ::loadYouTubePage,
                     loadYouTubeActivityPage = ::loadYouTubeActivityPage,
                     refreshHomeFocus = { restore -> content.rebuildFocus(restore) },
+                    runPlaybackCheck = {
+                        pendingPlaybackValidationReturnRefresh = true
+                        startActivity(Intent(this, ProbesActivity::class.java))
+                    },
                 ),
             )
         content.setPadding(ui.dp(22), ui.dp(16), ui.dp(22), ui.dp(18))
@@ -2541,6 +2547,10 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (pendingPlaybackValidationReturnRefresh) {
+            pendingPlaybackValidationReturnRefresh = false
+            refresh()
+        }
         PlaybackNotifications.requestPermission(this)
         foreground = true
         companionController.resume()

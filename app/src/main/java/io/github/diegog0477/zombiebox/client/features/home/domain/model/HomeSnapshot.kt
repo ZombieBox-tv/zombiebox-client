@@ -9,6 +9,7 @@ data class HomeSnapshot(
     val youtubeNextOffset: Int = -1,
     val youtubeActivityFeed: Boolean = false,
     val youtubeNextCursor: String = "",
+    val playbackValidation: PlaybackValidation = PlaybackValidation.UNAVAILABLE,
 )
 
 data class YouTubeActivityPage(val items: List<MediaItem>, val nextCursor: String)

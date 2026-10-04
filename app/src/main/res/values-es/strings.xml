@@ -346,6 +346,15 @@
     </string>
     <string name="browser_text">Texto para el campo seleccionado</string>
     <string name="browser_type">Escribir</string>
+    <string name="playback_validation_title">Se necesitan comprobaciones de reproducción</string>
+    <string name="playback_validation_expired">
+        Las comprobaciones de reproducción vencieron. Ejecútalas de nuevo para recuperar las
+        opciones de reproducción disponibles.
+    </string>
+    <string name="playback_validation_refresh">
+        Ejecuta las comprobaciones de reproducción para determinar las opciones disponibles.
+    </string>
+    <string name="playback_validation_action">Ejecutar comprobación de reproducción</string>
     <string name="run_probes">Ejecutar pruebas multimedia</string>
     <string name="player_timeline_position">
         Línea de tiempo: %1$s de %2$s. Izquierda o derecha para avanzar o retroceder.

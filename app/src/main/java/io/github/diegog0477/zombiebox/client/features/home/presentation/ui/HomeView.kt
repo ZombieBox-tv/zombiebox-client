@@ -56,6 +56,7 @@ data class HomeActions(
             done(null, null)
         },
     val refreshHomeFocus: (Boolean) -> Unit = {},
+    val runPlaybackCheck: () -> Unit = {},
 )
 
 /** Home composition and D-pad focus. Receives semantic content and user-action callbacks. */
@@ -431,6 +432,25 @@ class HomeView(
         playbackFeedbackView = ui.text("", 15f, ui.muted)
         content.addView(playbackFeedbackView)
         playbackFeedback(playbackFeedbackMessage)
+
+        if (!full && snapshot.playbackValidation.needsPlaybackCheck) {
+            val banner =
+                PlaybackValidationBanner(
+                    context,
+                    ui,
+                    scope.provider,
+                    snapshot.playbackValidation.reason,
+                    actions.runPlaybackCheck,
+                )
+            content.addView(
+                banner,
+                LinearLayout.LayoutParams(-1, -2).apply {
+                    topMargin = ui.dp(8)
+                    bottomMargin = ui.dp(8)
+                },
+            )
+            focusRows.add(Pair(PlaybackValidationBanner.FOCUS_ROW_ID, banner))
+        }
 
         when (scope.provider) {
             "youtube" -> {

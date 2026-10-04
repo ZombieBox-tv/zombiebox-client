@@ -328,6 +328,14 @@
     <string name="browser_pointer_mode">POINTER MODE · arrows move · OK clicks · Back exits</string>
     <string name="browser_text">Text for the focused field</string>
     <string name="browser_type">Type</string>
+    <string name="playback_validation_title">Playback check needed</string>
+    <string name="playback_validation_expired">
+        Playback checks have expired. Run them again to restore available playback options.
+    </string>
+    <string name="playback_validation_refresh">
+        Run playback checks to determine available playback options.
+    </string>
+    <string name="playback_validation_action">Run playback check</string>
     <string name="run_probes">Run media probes</string>
     <string name="player_timeline_position">Timeline: %1$s of %2$s. Left or right to seek.</string>
     <string name="player_timeline_unavailable">Timeline unavailable</string>
